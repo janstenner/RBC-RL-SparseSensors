@@ -277,7 +277,7 @@ mask = ones(Float32, size(env.state[:,1]))
 
 
 
-function update_mask(threshold = 0.1)
+function update_mask(threshold = 0.0)
     global mask
 
     mask = ones(Float32, size(env.state[:,1]))
