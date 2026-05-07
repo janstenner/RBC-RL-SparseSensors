@@ -46,6 +46,16 @@ For interactive work, start Julia from the repository root with:
 julia --project=.
 ```
 
+Equivalent alternatives are:
+
+- start Julia, enter Pkg mode with `]`, and run:
+
+  ```julia
+  activate .
+  ```
+
+- run scripts from VS Code with the repository root selected as the current Julia environment.
+
 The top-level `Project.toml` resolves the custom RL package via:
 
 ```toml
@@ -81,9 +91,11 @@ Run a deterministic test episode with the current agent:
 render_run()
 ```
 
-Saved agents can be loaded with the script-local `load` helper, for example:
+Each training script provides script-local `save` and `load` helpers. Calling `save()` stores the current agent and hook in the script's `saves/` directory. Calling `save(1001)` writes numbered save files, and `load(1001)` loads the corresponding numbered state:
 
 ```julia
+save()
+save(1001)
 load()
 load(1001)
 ```
@@ -124,9 +136,11 @@ validate_agent(use_apprentice = false)
 include("validation/varying_ic_validation.jl")
 ```
 
-Saved agents can be loaded via:
+Each varying-IC training script uses the same script-local save/load pattern:
 
 ```julia
+save()
+save(9001)
 load()
 load(9001)
 ```
