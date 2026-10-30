@@ -1,0 +1,4 @@
+# Keep LF everywhere: run-file SHA-256 values are checked against shipped artifacts,
+# and the tmux launchers must stay valid bash scripts.
+* text=auto eol=lf
+*.jld2 binary

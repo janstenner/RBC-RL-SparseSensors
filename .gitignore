@@ -1,2 +1,11 @@
+# Local agent notes and editor settings
 AGENTS.md
+.vscode/
+
+# Generated rendering output
+frames/
+video_output/
+training_frames/
+
+# Environment-specific resolution
 Manifest.toml

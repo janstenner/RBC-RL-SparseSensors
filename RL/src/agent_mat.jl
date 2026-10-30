@@ -5,15 +5,23 @@ struct MATEncoderBlock{MHA,LN1,LN2,FF,DO}
     ln2::LN2
     ff::FF
     dropout::DO
+    useLayerNorm::Bool
 end
 
-function MATEncoderBlock(d_model::Int, nheads::Int, head_dim::Int, d_ff::Int; pdrop=0.1)
+function MATEncoderBlock(d_model::Int, nheads::Int, head_dim::Int, d_ff::Int;
+                         pdrop=0.0,
+                         useLayerNorm::Bool=false,
+                         init=Flux.glorot_uniform)
     MATEncoderBlock(
-        MultiHeadAttention(d_model => head_dim*nheads => d_model, nheads=nheads, dropout_prob=pdrop),
+        MultiHeadAttention(d_model => head_dim*nheads => d_model, nheads=nheads, dropout_prob=pdrop, init=init),
         LayerNorm(d_model),
         LayerNorm(d_model),
-        Chain(Dense(d_model, d_ff, gelu), Dense(d_ff, d_model)),
-        Dropout(pdrop)
+        Chain(
+            Dense(d_model, d_ff, gelu; init=init),
+            Dense(d_ff, d_model; init=init),
+        ),
+        Dropout(pdrop),
+        useLayerNorm,
     )
 end
 
@@ -22,11 +30,13 @@ Flux.@layer MATEncoderBlock trainable=(mha, ln1, ln2, ff)
 function (m::MATEncoderBlock)(x)
     # x: (d_model, T, B)
     y, _ = m.mha(x, x, x; mask=nothing)   # Self-Attention
-    # x = m.ln1(x .+ m.dropout(y))
     x = x .+ m.dropout(y)
+    m.useLayerNorm && (x = m.ln1(x))
+
     z = m.ff(x)
-    # x = m.ln2(x .+ m.dropout(z))
     x = x .+ m.dropout(z)
+    m.useLayerNorm && (x = m.ln2(x))
+
     return x
 end
 
@@ -42,18 +52,30 @@ struct MATDecoderBlock{MHA1,MHA2,LN1,LN2,LN3,FF,DO}
     ff::FF
     dropout::DO
     useCustomCrossAttention::Bool
+    useLayerNorm::Bool
+    useSelfAttentionFirst::Bool
 end
 
-function MATDecoderBlock(d_model::Int, nheads::Int, head_dim::Int, d_ff::Int; pdrop=0.1, useCustomCrossAttention::Bool=false)
+function MATDecoderBlock(d_model::Int, nheads::Int, head_dim::Int, d_ff::Int;
+                         pdrop=0.0,
+                         useCustomCrossAttention::Bool=true,
+                         useLayerNorm::Bool=false,
+                         useSelfAttentionFirst::Bool=false,
+                         init=Flux.glorot_uniform)
     MATDecoderBlock(
-        MultiHeadAttention(d_model => head_dim*nheads => d_model, nheads=nheads, dropout_prob=pdrop),
-        MultiHeadAttention(d_model => head_dim*nheads => d_model, nheads=nheads, dropout_prob=pdrop),
+        MultiHeadAttention(d_model => head_dim*nheads => d_model, nheads=nheads, dropout_prob=pdrop, init=init),
+        MultiHeadAttention(d_model => head_dim*nheads => d_model, nheads=nheads, dropout_prob=pdrop, init=init),
         LayerNorm(d_model),
         LayerNorm(d_model),
         LayerNorm(d_model),
-        Chain(Dense(d_model, d_ff, gelu), Dense(d_ff, d_model)),
+        Chain(
+            Dense(d_model, d_ff, gelu; init=init),
+            Dense(d_ff, d_model; init=init),
+        ),
         Dropout(pdrop),
         useCustomCrossAttention,
+        useLayerNorm,
+        useSelfAttentionFirst,
     )
 end
 
@@ -63,23 +85,40 @@ function (m::MATDecoderBlock)(x, obs_rep)
     # x: (d_model, T, B)
     mask = NNlib.make_causal_mask(x, dims=2)
 
-    if m.useCustomCrossAttention
-        y, _ = m.mha1(obs_rep, x, x; mask=mask)
-        # x = m.ln1(obs_rep .+ m.dropout(y))
-        x = obs_rep .+ m.dropout(y)
-    else
-        y, _ = m.mha1(x, obs_rep, obs_rep; mask=mask)
-        # x = m.ln1(x .+ m.dropout(y))
+    if m.useSelfAttentionFirst
+        # Python MAT order: self-attention, then cross-attention.
+        # mha1 remains the cross-attention module to preserve the legacy weight mapping.
+        y, _ = m.mha2(x, x, x; mask=mask)
         x = x .+ m.dropout(y)
+        m.useLayerNorm && (x = m.ln1(x))
+
+        if m.useCustomCrossAttention
+            y, _ = m.mha1(obs_rep, x, x; mask=mask)
+            x = obs_rep .+ m.dropout(y)
+        else
+            y, _ = m.mha1(x, obs_rep, obs_rep; mask=mask)
+            x = x .+ m.dropout(y)
+        end
+        m.useLayerNorm && (x = m.ln2(x))
+    else
+        # Legacy Julia order: cross-attention, then self-attention.
+        if m.useCustomCrossAttention
+            y, _ = m.mha1(obs_rep, x, x; mask=mask)
+            x = obs_rep .+ m.dropout(y)
+        else
+            y, _ = m.mha1(x, obs_rep, obs_rep; mask=mask)
+            x = x .+ m.dropout(y)
+        end
+        m.useLayerNorm && (x = m.ln1(x))
+
+        y, _ = m.mha2(x, x, x; mask=mask)
+        x = x .+ m.dropout(y)
+        m.useLayerNorm && (x = m.ln2(x))
     end
 
-    y, _ = m.mha2(x, x, x; mask=mask)
-    # x = m.ln2(x .+ m.dropout(y))
-    x = x .+ m.dropout(y)
-
     z = m.ff(x)
-    # x = m.ln3(x .+ m.dropout(z))
     x = x .+ m.dropout(z)
+    m.useLayerNorm && (x = m.ln3(x))
 
     return x
 end
@@ -91,10 +130,17 @@ end
 Flux.@layer BlockStack trainable=(blocks)
 
 function BlockStack(N::Integer, d_model::Int, nheads::Int, head_dim::Int, d_ff::Int;
-                    pdrop=0.1, useCustomCrossAttention::Bool=false)
+                    pdrop=0.0,
+                    useCustomCrossAttention::Bool=true,
+                    useLayerNorm::Bool=false,
+                    useSelfAttentionFirst::Bool=false,
+                    init=Flux.glorot_uniform)
     blocks = ntuple(_ -> MATDecoderBlock(d_model, nheads, head_dim, d_ff;
                                          pdrop=pdrop,
-                                         useCustomCrossAttention=useCustomCrossAttention),
+                                         useCustomCrossAttention=useCustomCrossAttention,
+                                         useLayerNorm=useLayerNorm,
+                                         useSelfAttentionFirst=useSelfAttentionFirst,
+                                         init=init),
                     Int(N))
     return BlockStack(blocks)
 end
@@ -128,7 +174,8 @@ Base.@kwdef struct MATEncoder{
     head::H
 
     jointPPO::Bool = false
-    useSeparateValueChain::Bool = false
+    useSeparateValueChain::Bool = true
+    useLayerNorm::Bool = false
 end
 
 Flux.@layer MATEncoder trainable=(embedding, position_encoding, ln, dropout, blocks, embedding_v, position_encoding_v, ln_v, dropout_v, blocks_v, head)
@@ -152,28 +199,18 @@ function (m::MATEncoder)(x)
     x = m.embedding(x)              # (dm, N, B)
     N = size(x, 2)
     x = x .+ m.position_encoding(1:N) # (dm, N, B)
+    m.useLayerNorm && (x = m.ln(x))
 
-    # x = m.ln(x)
-
-    # if !(iszero(x))
-    #     x = m.ln(x)
-    # end
-
-    x = m.dropout(x)                # (dm, N, B)
+    #x = m.dropout(x)                # (dm, N, B)
 
     rep = run_blocks(m.blocks, x)     # (dm, N, B)
 
     if m.useSeparateValueChain
         if m.jointPPO
             vv = vv .+ m.position_encoding_v(1:N)
+            m.useLayerNorm && (vv = m.ln_v(vv))
 
-            vv = m.ln_v(vv)
-
-            # if !(iszero(vv))
-            #     vv = m.ln_v(vv)
-            # end
-
-            vv = m.dropout_v(vv)                # (dm, N, B)
+            #vv = m.dropout_v(vv)                # (dm, N, B)
             vv = run_blocks(m.blocks_v, vv)     # (dm, N, B)
 
             sr = size(vv)
@@ -182,14 +219,9 @@ function (m::MATEncoder)(x)
             v = repeat(v, 1,sr[2],1)                   # (1, N, B)
         else
             vv = vv .+ m.position_encoding_v(1:N)
-         
-            # vv = m.ln_v(vv)
+            m.useLayerNorm && (vv = m.ln_v(vv))
 
-            # if !(iszero(vv))
-            #     vv = m.ln_v(vv)
-            # end
-
-            vv = m.dropout_v(vv)                # (dm, N, B)
+            #vv = m.dropout_v(vv)                # (dm, N, B)
             vv = run_blocks(m.blocks_v, vv)     # (dm, N, B)
 
             v = m.head(vv)       # (1, N, B)
@@ -224,6 +256,7 @@ Base.@kwdef struct MATDecoder{
     logσ_is_network::Bool = false
     min_σ::Float32 = 0.0f0
     max_σ::Float32 = Inf32
+    useLayerNorm::Bool = false
 end
 
 Flux.@layer MATDecoder trainable=(embedding, position_encoding, ln, dropout, blocks, head, logσ)
@@ -244,13 +277,7 @@ function (m::MATDecoder)(x, obs_rep)
     x = m.embedding(x)              # (dm, N, B)
     N = size(x, 2)
     x = x .+ m.position_encoding(1:N) # (dm, N, B)
-
-    # x = m.ln(x)
-
-    # if !(iszero(x))
-    #     x = m.ln(x)
-    #     # x = (x.-mean(x, dims=1))./std(x, dims=1)
-    # end
+    m.useLayerNorm && (x = m.ln(x))
 
     x = m.dropout(x)                # (dm, N, B)
 
@@ -410,7 +437,7 @@ end
 (pe::SinCosPositionEmbed)(idxs::AbstractVector{<:Integer}) = @view pe.pe[:, idxs]
 
 
-function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update_freq = 256, nna_scale = 1, nna_scale_critic = nothing, network_depth = 2, network_depth_critic = nothing, drop_middle_layer = nothing, drop_middle_layer_critic = nothing, learning_rate = 0.00001, fun = leakyrelu, fun_critic = nothing, n_actors = 1, clip1 = false, n_epochs = 4, n_microbatches = 4, normalize_advantage = true, logσ_is_network = false, start_steps = -1, start_policy = nothing, max_σ = 2.0f0, actor_loss_weight = 1.0f0, critic_loss_weight = 0.5f0, entropy_loss_weight = 0.00f0, adaptive_weights = false, clip_grad = 0.5, target_kl = 100.0, start_logσ = 0.0, dim_model = 64, block_num = 1, head_num = 4, head_dim = nothing, ffn_dim = 120, drop_out = 0.1, betas = (0.99, 0.99), jointPPO = false, customCrossAttention = true, one_by_one_training = false, clip_range = 0.2f0, tanh_end = false, positional_encoding = 1, positional_encoding_decoder = nothing, useSeparateValueChain = false, verbose = false)
+function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update_freq = 256, nna_scale = 1, nna_scale_critic = nothing, network_depth = 2, network_depth_critic = nothing, drop_middle_layer = nothing, drop_middle_layer_critic = nothing, learning_rate = 0.00001, fun = leakyrelu, fun_critic = nothing, n_actors = 1, clip1 = false, n_epochs = 4, n_microbatches = 4, normalize_advantage = true, logσ_is_network = false, start_steps = -1, start_policy = nothing, max_σ = 2.0f0, actor_loss_weight = 1.0f0, critic_loss_weight = 0.5f0, entropy_loss_weight = 0.00f0, adaptive_weights = false, clip_grad = 0.5, target_kl = 100.0, start_logσ = 0.0, dim_model = 64, block_num = 1, head_num = 4, head_dim = nothing, ffn_dim = 120, drop_out = 0.0, betas = (0.99, 0.99), jointPPO = false, customCrossAttention = true, one_by_one_training = false, clip_range = 0.2f0, tanh_end = false, positional_encoding = 1, positional_encoding_decoder = nothing, useSeparateValueChain = true, verbose = false, use_mus = true, useLayerNorm::Bool = false, useSelfAttentionFirst::Bool = false)
 
     isnothing(nna_scale_critic)         &&  (nna_scale_critic = nna_scale)
     !isnothing(drop_middle_layer)        &&  (network_depth = drop_middle_layer ? 1 : 2)
@@ -437,46 +464,68 @@ function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update
     end
 
     if network_depth_critic == 1
-        head_encoder = Dense(encoder_input_dim, 1)
+        head_encoder = Dense(encoder_input_dim, 1; init=init)
     else
-        encoder_layers = Any[Dense(encoder_input_dim, ffn_dim, fun)]
+        encoder_layers = Any[Dense(encoder_input_dim, ffn_dim, fun; init=init)]
         for _ in 3:network_depth_critic
-            push!(encoder_layers, Dense(ffn_dim, ffn_dim, fun))
+            push!(encoder_layers, Dense(ffn_dim, ffn_dim, fun; init=init))
         end
-        push!(encoder_layers, Dense(ffn_dim, 1))
+        push!(encoder_layers, Dense(ffn_dim, 1; init=init))
         head_encoder = Chain(encoder_layers...)
     end
 
     if network_depth == 1
         if tanh_end
-            head_decoder = Dense(dim_model, na, tanh)
+            head_decoder = Dense(dim_model, na, tanh; init=init)
         else
-            head_decoder = Dense(dim_model, na)
+            head_decoder = Dense(dim_model, na; init=init)
         end
         head_decoder.weight[:] *= 0.01
         head_decoder.bias[:] *= 0.01
     else
-        decoder_layers = Any[Dense(dim_model, ffn_dim, fun)]
+        decoder_layers = Any[Dense(dim_model, ffn_dim, fun; init=init)]
         for _ in 3:network_depth
-            push!(decoder_layers, Dense(ffn_dim, ffn_dim, fun))
+            push!(decoder_layers, Dense(ffn_dim, ffn_dim, fun; init=init))
         end
         if tanh_end
-            push!(decoder_layers, Dense(ffn_dim, na, tanh))
+            push!(decoder_layers, Dense(ffn_dim, na, tanh; init=init))
         else
-            push!(decoder_layers, Dense(ffn_dim, na))
+            push!(decoder_layers, Dense(ffn_dim, na; init=init))
         end
         head_decoder = Chain(decoder_layers...)
     end
 
 
-    decoder_blocks = BlockStack(block_num, dim_model, head_num, head_dim, ffn_dim; pdrop=drop_out, useCustomCrossAttention=customCrossAttention)
+    decoder_blocks = BlockStack(
+        block_num,
+        dim_model,
+        head_num,
+        head_dim,
+        ffn_dim;
+        pdrop=drop_out,
+        useCustomCrossAttention=customCrossAttention,
+        useLayerNorm=useLayerNorm,
+        useSelfAttentionFirst=useSelfAttentionFirst,
+        init=init,
+    )
 
-    encoder_blocks = Chain(ntuple(_ -> MATEncoderBlock(dim_model, head_num, head_dim, ffn_dim; pdrop=drop_out), block_num)...)
+    encoder_blocks = Chain(ntuple(
+        _ -> MATEncoderBlock(
+            dim_model,
+            head_num,
+            head_dim,
+            ffn_dim;
+            pdrop=drop_out,
+            useLayerNorm=useLayerNorm,
+            init=init,
+        ),
+        block_num,
+    )...)
 
     if positional_encoding == 1
         position_encoding_encoder = SinCosPositionEmbed(dim_model)
     elseif positional_encoding == 2
-        position_encoding_encoder = Embedding(context_size => dim_model)
+        position_encoding_encoder = Embedding(context_size => dim_model; init=init)
     elseif positional_encoding == 3
         position_encoding_encoder = ZeroEncoding(dim_model)
     end
@@ -484,19 +533,26 @@ function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update
     if positional_encoding_decoder == 1
         position_encoding_decoder = SinCosPositionEmbed(dim_model)
     elseif positional_encoding_decoder == 2
-        position_encoding_decoder = Embedding(context_size => dim_model)
+        position_encoding_decoder = Embedding(context_size => dim_model; init=init)
     elseif positional_encoding_decoder == 3
         position_encoding_decoder = ZeroEncoding(dim_model)
     end
 
+    embedding_encoder = Dense(ns, dim_model; bias=false, init=init)
+    layer_norm_encoder = LayerNorm(dim_model)
+    dropout_encoder = Dropout(drop_out)
+
+    embedding_decoder = Dense(na, dim_model; bias=false, init=init)
+    layer_norm_decoder = LayerNorm(dim_model)
+    dropout_decoder = Dropout(drop_out)
 
 
     if useSeparateValueChain
-        embedding_v = Dense(ns, dim_model, bias = false)
+        embedding_v = deepcopy(embedding_encoder)
         position_encoding_v = deepcopy(position_encoding_encoder)
-        ln_v = LayerNorm(dim_model)
-        dropout_v = Dropout(drop_out)
-        encoder_blocks_v = Chain(ntuple(_ -> MATEncoderBlock(dim_model, head_num, head_dim, ffn_dim; pdrop=drop_out), block_num)...)
+        ln_v = deepcopy(layer_norm_encoder)
+        dropout_v = deepcopy(dropout_encoder)
+        encoder_blocks_v = deepcopy(encoder_blocks)
     else
         embedding_v = nothing
         position_encoding_v = nothing
@@ -508,10 +564,10 @@ function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update
     
 
     encoder = MATEncoder(
-        embedding = Dense(ns, dim_model, bias = false),
+        embedding = embedding_encoder,
         position_encoding = position_encoding_encoder,
-        ln = LayerNorm(dim_model),
-        dropout = Dropout(drop_out),
+        ln = layer_norm_encoder,
+        dropout = dropout_encoder,
         blocks = encoder_blocks,
 
         embedding_v = embedding_v,
@@ -524,18 +580,20 @@ function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update
 
         jointPPO = jointPPO,
         useSeparateValueChain = useSeparateValueChain,
+        useLayerNorm = useLayerNorm,
     )
 
     decoder = MATDecoder(
-        embedding = Dense(na, dim_model, bias = false),
+        embedding = embedding_decoder,
         position_encoding = position_encoding_decoder,
-        ln = LayerNorm(dim_model),
-        dropout = Dropout(drop_out),
+        ln = layer_norm_decoder,
+        dropout = dropout_decoder,
         blocks = decoder_blocks,
         head = head_decoder,
         logσ = create_logσ_mat(logσ_is_network = logσ_is_network, ns = dim_model, na = na, use_gpu = use_gpu, init = init, nna_scale = nna_scale, network_depth = network_depth, fun = fun, start_logσ = start_logσ),
         logσ_is_network = logσ_is_network,
         max_σ = max_σ,
+        useLayerNorm = useLayerNorm,
     )
 
     
@@ -581,6 +639,7 @@ function create_agent_mat(;action_space, state_space, use_gpu, rng, y, p, update
             jointPPO = jointPPO,
             one_by_one_training = one_by_one_training,
             verbose = verbose,
+            use_mus = use_mus,
         ),
         trajectory = 
         CircularArrayTrajectory(;
@@ -625,6 +684,7 @@ Base.@kwdef mutable struct MATPolicy <: AbstractPolicy
     start_policy = nothing
     target_kl = 100.0
     verbose::Bool = false
+    use_mus::Bool = true
     last_action_log_prob::Vector{Float32} = [0.0]
     next_values::Vector{Float32} = [0.0]
     jointPPO::Bool = false
@@ -678,31 +738,68 @@ end
 
 function (p::MATPolicy)(env::AbstractEnv)
 
-    if p.update_step <= p.start_steps
-        dist = prob(p, env)
-        action = p.start_policy(env)
+    if p.use_mus
+
+        if p.update_step <= p.start_steps
+            dist = prob(p, env)
+            action = p.start_policy(env)
+        else
+            dist = prob(p, env)
+            action = rand.(p.rng, dist)
+        end
+
+        if p.clip1
+            clamp!(action, -1.0, 1.0)
+        end
+
+        # put the last action log prob behind the clip
+        
+        ###p.last_action_log_prob = vec(sum(logpdf.(dist, action), dims=1))
+
+
+        if ndims(action) > 1
+            log_p = vec(sum(normlogpdf(dist.μ, dist.σ, action), dims=1))
+        else
+            log_p = normlogpdf(dist.μ, dist.σ, action)
+        end
+
+        p.last_action_log_prob = log_p[:]
+
+        return action
+
     else
-        dist = prob(p, env)
+
+        state = env.state
+        na = size(p.decoder.embedding.weight)[2]
+        batch_size = length(size(state)) == 3 ? size(state)[3] : 1
+
+        obsrep, val = p.encoder(state)
+
+        μ, logσ = p.decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
+        dist = StructArray{Normal}((μ, exp.(logσ)))
         action = rand.(p.rng, dist)
+        if p.clip1
+            clamp!(action, -1.0, 1.0)
+        end
+
+        for n in 2:p.n_actors
+            μ, logσ = p.decoder(cat(zeros(Float32,na,1,batch_size), action, dims=2), obsrep[:,1:n,:])
+            
+            dist = StructArray{Normal}((μ, exp.(logσ)))
+            new_action = rand.(p.rng, dist)[:,end:end,:]
+            if p.clip1
+                clamp!(new_action, -1.0, 1.0)
+            end
+
+            action = cat(action, new_action, dims=2)
+        end
+
+        log_p = sum(normlogpdf(dist.μ, dist.σ, action), dims=1)
+
+        p.last_action_log_prob = log_p[:]
+
+        return action
     end
-
-    if p.clip1
-        clamp!(action, -1.0, 1.0)
-    end
-
-    # put the last action log prob behind the clip
-    
-    ###p.last_action_log_prob = vec(sum(logpdf.(dist, action), dims=1))
-
-    if ndims(action) == 2
-        log_p = vec(sum(normlogpdf(dist.μ, dist.σ, action), dims=1))
-    else
-        log_p = normlogpdf(dist.μ, dist.σ, action)
-    end
-
-    p.last_action_log_prob = log_p[:]
-
-    action
 end
 
 function (agent::Agent{<:MATPolicy})(env::MultiThreadEnv)
@@ -928,20 +1025,23 @@ function _update!(p::MATPolicy, t::Any)
                 # obs_rep, v′_no = p.encoder(s)
                 # obs_rep_no, v′ = encoder(s)
 
-                # parallel act
-                # temp_act = cat(zeros(Float32,1,1,size(a)[3]),a[:,1:end-1,:],dims=2)
-                # μ, logσ = decoder(temp_act, obs_rep)
+                if p.use_mus
+                    # auto regressive act
+                    μ, logσ = decoder(zeros(Float32,size(a,1),1,microbatch_size), obs_rep[:,1:1,:])
 
-                # auto regressive act
-                μ, logσ = decoder(zeros(Float32,size(a,1),1,microbatch_size), obs_rep[:,1:1,:])
+                    for n in 2:p.n_actors
+                        newμ, newlogσ = decoder(cat(zeros(Float32,size(a,1),1,microbatch_size), μ, dims=2), obs_rep[:,1:n,:])
 
-                for n in 2:p.n_actors
-                    newμ, newlogσ = decoder(cat(zeros(Float32,size(a,1),1,microbatch_size), μ, dims=2), obs_rep[:,1:n,:])
-
-                    μ = cat(μ, newμ[:,end:end,:], dims=2)
-                    logσ = cat(logσ, newlogσ[:,end:end,:], dims=2)
-                end
+                        μ = cat(μ, newμ[:,end:end,:], dims=2)
+                        logσ = cat(logσ, newlogσ[:,end:end,:], dims=2)
+                    end
                 
+                else
+                    # parallel act
+                    temp_act = cat(zeros(Float32,1,1,size(a)[3]),a[:,1:end-1,:],dims=2)
+                    μ, logσ = decoder(temp_act, obs_rep)
+                end
+
                 log_p′ₐ = sum(normlogpdf(μ, exp.(logσ), a), dims=1)
 
                 
@@ -954,7 +1054,7 @@ function _update!(p::MATPolicy, t::Any)
                 ignore() do
                     approx_kl_div = mean((ratio .- 1) - log.(ratio)) |> send_to_host
 
-                    if approx_kl_div > p.target_kl && (i > 1 || epoch > 1) # only in second batch
+                    if approx_kl_div > p.target_kl
                         if p.verbose
                             println("Target KL overstepped: $(approx_kl_div) at epoch $(epoch), batch $(i)")
                         end
