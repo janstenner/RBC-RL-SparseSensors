@@ -47,7 +47,7 @@ function read_training(path)
             status = string(read(file, "status"))
             protocol = Symbol(read(file, "protocol"))
             algorithm = haskey(file, "algorithm") ? Symbol(read(file, "algorithm")) : :mat
-            run_id = string(optional_read(file, "run_id", optional_read(file, "package4_run_id", basename(dirname(dirname(path))))))
+            run_id = string(optional_read(file, "run_id", optional_read(file, "comparison_run_id", basename(dirname(dirname(path))))))
             rewards = Float64.(optional_read(file, "rewards", Float64[]))
             (
                 path = path,
@@ -55,7 +55,7 @@ function read_training(path)
                 run_id = run_id,
                 protocol = protocol,
                 algorithm = algorithm,
-                origin = Symbol(optional_read(file, "origin", optional_read(file, "package4_origin", :unknown))),
+                origin = Symbol(optional_read(file, "origin", optional_read(file, "comparison_origin", :unknown))),
                 run_seed = Int(read(file, "run_seed")),
                 ic_seed = Int(read(file, "ic_seed")),
                 episode_target = Int(read(file, "episode_target")),
@@ -66,7 +66,7 @@ function read_training(path)
                 error_message = string(optional_read(file, "error_message", "")),
                 parameter_count = Int(optional_read(file, "parameter_count", optional_read(file, "full_parameter_count", -1))),
                 trace = optional_read(file, "initial_condition_trace", NamedTuple[]),
-                imported_source = string(optional_read(file, "package4_source_path", "")),
+                imported_source = string(optional_read(file, "comparison_source_path", "")),
             )
         end
     catch error_value

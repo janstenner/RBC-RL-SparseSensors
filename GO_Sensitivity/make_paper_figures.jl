@@ -6,14 +6,14 @@ using Printf
 using SHA
 using Statistics
 
-include(joinpath(@__DIR__, "Package6Analysis.jl"))
-include(joinpath(@__DIR__, "Package6Study.jl"))
-using .Package6Analysis
-using .Package6Study
+include(joinpath(@__DIR__, "GOSensitivityAnalysis.jl"))
+include(joinpath(@__DIR__, "GOSensitivityStudy.jl"))
+using .GOSensitivityAnalysis
+using .GOSensitivityStudy
 
 const PROTOCOLS = (:fixed, :varying)
 const PROTOCOL_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
-const QUALITY_THRESHOLDS = P6_QUALITY_THRESHOLDS
+const QUALITY_THRESHOLDS = GO_SENSITIVITY_QUALITY_THRESHOLDS
 const QUALITY_TARGETS = (12, 6, 3, 2)
 const HITTING_TARGETS = (48, 24, 12, 6, 3, 1)
 const CONTROLLER_ORDER = ("expert", "C_match", "C_sparse", "unactuated")
@@ -64,7 +64,7 @@ function usage(io::IO = stdout)
       julia --startup-file=no --project=. GO_Sensitivity/make_paper_figures.jl [options]
 
     Options:
-      --results-dir DIR  Package-6 study root (default: GO_Sensitivity/results/study).
+      --results-dir DIR  GO-sensitivity study root (default: GO_Sensitivity/results/study).
       --output-dir DIR   Output directory (default: <results-dir>/paper).
       --check-only       Validate inputs and calculate metrics without exporting figures.
       --self-test        Run deterministic tests that require no study results.
@@ -283,7 +283,7 @@ function apply_baseline_artifacts(protocol, candidate_path, test_episodes, test_
         rows, returns = baseline_csv_rows(protocol, controller, artifact)
         observed_cases = Set(string_value(row, :case) for row in returns)
         observed_cases == expected_cases || error(
-            "$(protocol)/$controller baseline cases differ from the Package-6 test set.",
+            "$(protocol)/$controller baseline cases differ from the GO-sensitivity test set.",
         )
         filter!(row -> string_value(row, :role) != controller, test_episodes)
         filter!(row -> string_value(row, :role) != controller, test_returns)
@@ -298,7 +298,7 @@ end
 function load_protocol(results_dir, protocol)
     paths = required_paths(results_dir, protocol)
     for path in values(paths)
-        isfile(path) || error("Required Package-6 artifact is missing: $path")
+        isfile(path) || error("Required GO-sensitivity artifact is missing: $path")
     end
     status = validate_status(paths[:status], protocol)
     candidates = load_candidates(paths[:candidates], protocol)
@@ -334,7 +334,7 @@ function validate_loaded_data(data)
     length(go_runs) == 15 || error("$(data.protocol): expected 15 GO runs, found $(length(go_runs)).")
     length(gr_runs) == 3 || error("$(data.protocol): expected 3 GR runs, found $(length(gr_runs)).")
     strengths = sort(unique(float_value(row, :regularization_strength) for row in data.checkpoints if string_value(row, :method) == "go"))
-    strengths == sort(collect(P6_STRENGTHS[data.protocol])) || error("$(data.protocol): GO strength grid differs from Package6Study.jl.")
+    strengths == sort(collect(GO_SENSITIVITY_STRENGTHS[data.protocol])) || error("$(data.protocol): GO strength grid differs from GOSensitivityStudy.jl.")
     roles = Set(string_value(row, :role) for row in data.test_episodes)
     "expert" in roles || error("$(data.protocol): expert test episodes are missing.")
     "C_match" in roles || error("$(data.protocol): C_match test episodes are missing.")
@@ -345,7 +345,7 @@ end
 function response_metrics(data)
     threshold = QUALITY_THRESHOLDS[data.protocol]
     rows = NamedTuple[]
-    for replicate in P6_REPLICATES, (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol])
+    for replicate in GO_SENSITIVITY_REPLICATES, (strength_index, strength) in enumerate(GO_SENSITIVITY_STRENGTHS[data.protocol])
         matching = [row for row in data.fronts if
             string_value(row, :front_scope) == "run" &&
             string_value(row, :method) == "go" &&
@@ -375,7 +375,7 @@ function response_metrics(data)
         end
     end
     trends = NamedTuple[]
-    for replicate in P6_REPLICATES
+    for replicate in GO_SENSITIVITY_REPLICATES
         selected = sort(filter(row -> row.replicate == replicate && row.reached, rows); by = row -> row.strength)
         rho = spearman_correlation([row.strength for row in selected], [row.active_groups for row in selected])
         push!(trends, (;
@@ -388,9 +388,9 @@ end
 
 function quality_hitting_metrics(data)
     threshold = QUALITY_THRESHOLDS[data.protocol]
-    budget = P6_UPDATES[data.protocol]
+    budget = GO_SENSITIVITY_UPDATES[data.protocol]
     run_rows = NamedTuple[]
-    for replicate in P6_REPLICATES, (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol]), target in QUALITY_TARGETS
+    for replicate in GO_SENSITIVITY_REPLICATES, (strength_index, strength) in enumerate(GO_SENSITIVITY_STRENGTHS[data.protocol]), target in QUALITY_TARGETS
         matching = [row for row in data.checkpoints if
             string_value(row, :method) == "go" &&
             int_value(row, :replicate) == replicate &&
@@ -416,7 +416,7 @@ function quality_hitting_metrics(data)
         end
     end
     summary_rows = NamedTuple[]
-    for (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol]), target in QUALITY_TARGETS
+    for (strength_index, strength) in enumerate(GO_SENSITIVITY_STRENGTHS[data.protocol]), target in QUALITY_TARGETS
         selected = filter(row -> row.strength_index == strength_index && row.target_groups == target, run_rows)
         reached = filter(row -> row.reached, selected)
         normalized = Float64[row.normalized_first_update for row in reached]
@@ -574,7 +574,7 @@ function row_legend(y; font_size = PAPER_LEGEND_SIZE, title = nothing)
     return attr(; fields...)
 end
 
-strength_label(index) = @sprintf("%.4g / %.4g", P6_STRENGTHS[:fixed][index], P6_STRENGTHS[:varying][index])
+strength_label(index) = @sprintf("%.4g / %.4g", GO_SENSITIVITY_STRENGTHS[:fixed][index], GO_SENSITIVITY_STRENGTHS[:varying][index])
 
 minus_sign(text) = replace(text, "-" => "−")
 
@@ -673,7 +673,7 @@ function add_response_panel!(plot_handle, data, response, row, col; showlegend, 
     maximum_group = isempty(qualified_groups) ? 1 : maximum(qualified_groups)
     missing_level = maximum_group + max(2, ceil(Int, 0.15 * maximum_group))
     has_missing = any(!item.reached for item in response.rows)
-    for replicate in P6_REPLICATES
+    for replicate in GO_SENSITIVITY_REPLICATES
         selected = sort(filter(item -> item.replicate == replicate, response.rows); by = item -> item.strength)
         trend = only(filter(item -> item.replicate == replicate, response.trends))
         rho_text = isfinite(trend.spearman_rho) ? @sprintf("%.3f", trend.spearman_rho) : "NA"
@@ -709,7 +709,7 @@ function go_evaluations(data, strength_index)
         isfinite(float_value(item, :validation_matching)) &&
         float_value(item, :validation_matching) > 0]
     isempty(selected) && error("$(data.protocol): no finite GO evaluations for strength index $strength_index.")
-    Set(int_value(item, :replicate) for item in selected) == Set(P6_REPLICATES) ||
+    Set(int_value(item, :replicate) for item in selected) == Set(GO_SENSITIVITY_REPLICATES) ||
         error("$(data.protocol): strength index $strength_index does not contain all three replicates.")
     return selected
 end
@@ -745,7 +745,7 @@ end
 function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
     y_range = all_evaluations_y_range(data)
     original_count = displayed_count = 0
-    for strength_index in eachindex(P6_STRENGTHS[data.protocol])
+    for strength_index in eachindex(GO_SENSITIVITY_STRENGTHS[data.protocol])
         complete = go_evaluations(data, strength_index)
         selected = thin_evaluation_cloud(complete, y_range)
         original_count += length(complete)
@@ -792,7 +792,7 @@ end
 function add_alternative_evaluations_panel!(plot_handle, data, row, col; showlegend)
     y_range = [pareto_y_range(data)[1], 0.0]
     original_count = eligible_count = displayed_count = 0
-    for strength_index in eachindex(P6_STRENGTHS[data.protocol])
+    for strength_index in eachindex(GO_SENSITIVITY_STRENGTHS[data.protocol])
         complete = go_evaluations(data, strength_index)
         eligible = filter(item -> float_value(item, :validation_matching) <= 1.0, complete)
         selected = thin_evaluation_cloud(eligible, y_range)
@@ -844,7 +844,7 @@ end
 
 function all_evaluations_y_range(data)
     losses = Float64[]
-    for strength_index in eachindex(P6_STRENGTHS[data.protocol])
+    for strength_index in eachindex(GO_SENSITIVITY_STRENGTHS[data.protocol])
         append!(losses, float_value.(go_evaluations(data, strength_index), Ref(:validation_matching)))
     end
     return [log10(minimum(losses)) - 0.1, log10(maximum(losses)) + 0.1]
@@ -896,13 +896,13 @@ function make_main_figure(data_by_protocol, metrics, output; include_evaluations
         fixed = only(filter(item -> item.replicate == replicate, metrics.responses[:fixed].trends))
         varying = only(filter(item -> item.replicate == replicate, metrics.responses[:varying].trends))
         # The strength count n is shown only when a replicate misses a strength.
-        complete = fixed.qualified_strengths == varying.qualified_strengths == length(P6_STRENGTHS[:fixed])
+        complete = fixed.qualified_strengths == varying.qualified_strengths == length(GO_SENSITIVITY_STRENGTHS[:fixed])
         minus_sign(@sprintf(
             "Replicate %d: ρ<sub>s</sub> = %.3f (Fixed), %.3f (Varying)%s",
             replicate, fixed.spearman_rho, varying.spearman_rho,
             complete ? "" : @sprintf("; n = %d / %d", fixed.qualified_strengths, varying.qualified_strengths),
         ))
-    end for replicate in P6_REPLICATES)
+    end for replicate in GO_SENSITIVITY_REPLICATES)
     fixed_response = add_response_panel!(
         plot_handle, data_by_protocol[:fixed], metrics.responses[:fixed], 2, 1;
         showlegend = true, legend_id = "legend2", legend_labels = response_legend_labels,
@@ -928,9 +928,9 @@ function make_main_figure(data_by_protocol, metrics, output; include_evaluations
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:fixed])[1], 0.0] : pareto_y_range(data_by_protocol[:fixed]))),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups")),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:varying])[1], 0.0] : pareto_y_range(data_by_protocol[:varying]))),
-        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:fixed]), ticktext = string.(P6_STRENGTHS[:fixed]))),
+        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(GO_SENSITIVITY_STRENGTHS[:fixed]), ticktext = string.(GO_SENSITIVITY_STRENGTHS[:fixed]))),
         :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE ≤ $(QUALITY_THRESHOLDS[:fixed]))"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
-        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:varying]), ticktext = string.(P6_STRENGTHS[:varying]))),
+        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(GO_SENSITIVITY_STRENGTHS[:varying]), ticktext = string.(GO_SENSITIVITY_STRENGTHS[:varying]))),
         :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE ≤ $(QUALITY_THRESHOLDS[:varying]))"; range = [0, varying_top])),
         :legend => row_legend(include_evaluations ? 0.475 : 0.545),
         :legend2 => row_legend(-0.105),
@@ -1013,7 +1013,7 @@ function make_terminal_figure(data_by_protocol, output)
 end
 
 function add_hitting_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
-    for (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol])
+    for (strength_index, strength) in enumerate(GO_SENSITIVITY_STRENGTHS[data.protocol])
         values = Float64[]
         for target in HITTING_TARGETS
             matching = [item for item in data.hitting if
@@ -1101,7 +1101,7 @@ function archive_series(data, method, strength_index, grid)
     matching = [item for item in data.archive if string_value(item, :method) == method && int_value(item, :strength_index) == strength_index]
     run_ids = sort(unique(string_value(item, :run_id) for item in matching))
     length(run_ids) == 3 || error("Expected three archive runs for $(data.protocol), $method s$strength_index.")
-    budget = P6_UPDATES[data.protocol]
+    budget = GO_SENSITIVITY_UPDATES[data.protocol]
     matrix = zeros(Float64, length(run_ids), length(grid))
     for (run_index, run_id) in enumerate(run_ids)
         rows = [item for item in matching if string_value(item, :run_id) == run_id]
@@ -1160,8 +1160,8 @@ function make_supplement_figure(data_by_protocol, output)
     # add_archive_panel!(plot_handle, data_by_protocol[:fixed], 3, 1; showlegend = true, legend_id = "legend3")
     # add_archive_panel!(plot_handle, data_by_protocol[:varying], 3, 2; showlegend = false, legend_id = "legend3")
 
-    fixed_strength_ticktext = [string(value) for value in P6_STRENGTHS[:fixed]]
-    varying_strength_ticktext = [string(value) for value in P6_STRENGTHS[:varying]]
+    fixed_strength_ticktext = [string(value) for value in GO_SENSITIVITY_STRENGTHS[:fixed]]
+    varying_strength_ticktext = [string(value) for value in GO_SENSITIVITY_STRENGTHS[:varying]]
     push!(fixed_strength_ticktext, "GR ref")
     push!(varying_strength_ticktext, "GR ref")
     layout = common_layout(width = 1450, height = 1170)
@@ -1234,7 +1234,7 @@ function write_summary_table(output_dir, rows)
     csv_path = write_csv(joinpath(output_dir, "table_1_summary.csv"), rows)
     markdown_path = joinpath(output_dir, "table_1_summary.md")
     open(markdown_path, "w") do io
-        println(io, "# Package 6 summary table\n")
+        println(io, "# GO-sensitivity study summary table\n")
         println(io, "| Protocol | GO retained | GR retained | C_match (groups, validation MSE) | C_sparse (groups, validation MSE) | Expert test mean Nu | C_match test mean Nu | C_sparse test mean Nu |")
         println(io, "|---|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows
@@ -1264,8 +1264,8 @@ end
 function write_metrics_report(output_dir, data_by_protocol, metrics)
     path = joinpath(output_dir, "paper_metrics.md")
     open(path, "w") do io
-        println(io, "# Package 6 paper metrics\n")
-        println(io, "This report is generated deterministically from the completed Package-6 analysis products. Fixed IC uses the quality threshold `MSE <= $(QUALITY_THRESHOLDS[:fixed])`; Varying IC uses `MSE <= $(QUALITY_THRESHOLDS[:varying])`. No training, validation, candidate selection, or rollout is performed by the paper-figure script.\n")
+        println(io, "# GO-sensitivity study paper metrics\n")
+        println(io, "This report is generated deterministically from the completed GO-sensitivity analysis products. Fixed IC uses the quality threshold `MSE <= $(QUALITY_THRESHOLDS[:fixed])`; Varying IC uses `MSE <= $(QUALITY_THRESHOLDS[:varying])`. No training, validation, candidate selection, or rollout is performed by the paper-figure script.\n")
 
         println(io, "## 1. Empirical attainment across seeds\n")
         println(io, "`1/3`, `2/3`, and `3/3` are the best validation-MSE envelopes attained by at least one, two, or all three paired replicates at group budget `B`. The log spread is `log(L_3/3 / L_1/3)`; smaller finite values mean less seed sensitivity.\n")
@@ -1343,7 +1343,7 @@ function write_provenance(output_dir, data_by_protocol)
     sort!(unique!(inputs))
     path = joinpath(output_dir, "provenance.sha256")
     open(path, "w") do io
-        println(io, "# Package 6 paper-output input manifest")
+        println(io, "# GO-sensitivity study paper-output input manifest")
         println(io, "# Script: $(abspath(@__FILE__))")
         println(io, "# Script SHA-256: $(sha256_file(abspath(@__FILE__)))")
         for input in inputs
@@ -1421,7 +1421,7 @@ function run_self_tests()
             end
         end
     end
-    println("Package-6 paper figure self-tests passed.")
+    println("GO-sensitivity paper figure self-tests passed.")
     return nothing
 end
 
@@ -1464,7 +1464,7 @@ function main(arguments = ARGS)
     supplement_figure = make_supplement_figure(data_by_protocol, joinpath(options.output_dir, "figure_s1_stability_diagnostics.svg"))
     evaluation_figure = make_all_evaluations_pareto_figure(data_by_protocol, joinpath(options.output_dir, "figure_s2_all_evaluations_pareto.svg"))
 
-    println("Package-6 paper outputs written to $(options.output_dir):")
+    println("GO-sensitivity paper outputs written to $(options.output_dir):")
     for path in (main_figure, alternative_main_figure, terminal_figure, supplement_figure, evaluation_figure, table_paths.markdown_path, report_path, provenance_path)
         println("  $(path)")
     end

@@ -4,8 +4,8 @@ using Printf
 using SHA
 using Statistics
 
-include(joinpath(@__DIR__, "Package6Study.jl"))
-using .Package6Study
+include(joinpath(@__DIR__, "GOSensitivityStudy.jl"))
+using .GOSensitivityStudy
 if !isdefined(@__MODULE__, :PARETO_ARCHIVE_SCHEMA_VERSION)
     include(joinpath(@__DIR__, "..", "Expert_Apprentice_Distillation", "ParetoArchive.jl"))
 end
@@ -147,7 +147,7 @@ function run_episode(protocol, case, action_function)
 end
 
 function cache_path(output, controller_id, expert_identifier, case)
-    material = "$(P6_SCHEMA_VERSION)|$(controller_id)|$(expert_identifier)|$(case_identifier(case))|$TEST_STEPS"
+    material = "$(GO_SENSITIVITY_SCHEMA_VERSION)|$(controller_id)|$(expert_identifier)|$(case_identifier(case))|$TEST_STEPS"
     return joinpath(output, "cache", "$(cache_tag(material)).jld2")
 end
 
@@ -164,8 +164,8 @@ end
 function save_cache(path, episode; controller_id, expert_identifier, protocol, case)
     atomic_save(
         path;
-        schema_version = P6_SCHEMA_VERSION,
-        experiment = :package6_terminal_test,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
+        experiment = :go_sensitivity_terminal_test,
         selection_influence = false,
         protocol,
         controller_id,
@@ -201,7 +201,7 @@ function configure_test_runtime!(options, expert_path, expert_identifier, output
     ENV["DISTILLATION_GROUP_CHANNELS"] = "false"
     ENV["DISTILLATION_ALLOW_FRESH_EXPERT"] = "false"
     ENV[options.protocol === :fixed ? "DISTILLATION_FIXED_EXPERT_PATH" : "DISTILLATION_VARYING_EXPERT_PATH"] = expert_path
-    ENV["REVISION_RUN_SEED"] = string(P6_MASTER_SEED)
+    ENV["REVISION_RUN_SEED"] = string(GO_SENSITIVITY_MASTER_SEED)
     ENV["REVISION_RUN_DIRECTORY"] = joinpath(output, "runtime", runtime_tag)
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(output, "apprentice_output", runtime_tag)
     include(joinpath(DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
@@ -582,8 +582,8 @@ function finalize_test_results(options, data, output, cases, controllers)
     result_path = joinpath(output, "test_results.jld2")
     atomic_save(
         result_path;
-        schema_version = P6_SCHEMA_VERSION,
-        experiment = :package6_terminal_test,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
+        experiment = :go_sensitivity_terminal_test,
         protocol = options.protocol,
         selection_influence = false,
         parallel_episodes = options.parallel_test,

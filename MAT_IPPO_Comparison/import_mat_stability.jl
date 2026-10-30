@@ -4,11 +4,11 @@ using .MATIPPOExperiment
 function usage(io::IO = stdout)
     println(io, """
     Usage:
-      julia --project=. MAT_IPPO_Comparison/import_package3.jl --n-runs N [options]
+      julia --project=. MAT_IPPO_Comparison/import_mat_stability.jl --n-runs N [options]
 
     Options:
-      --results-dir PATH   Package-4 results directory.
-      --package3-dir PATH  Package-3 MAT stability results directory.
+      --results-dir PATH   MAT-IPPO comparison results directory.
+      --mat-stability-dir PATH  MAT-stability results directory.
       --preview            Validate and list candidates without copying or changing the plan.
       --help               Show this message.
     """)
@@ -17,7 +17,7 @@ end
 function main(arguments = ARGS)
     count = nothing
     results_directory = MATIPPOExperiment.DEFAULT_RESULTS_DIRECTORY
-    package3_directory = joinpath(@__DIR__, "..", "MAT_Stability", "results")
+    mat_stability_directory = joinpath(@__DIR__, "..", "MAT_Stability", "results")
     preview = false
     index = 1
     while index <= length(arguments)
@@ -28,7 +28,7 @@ function main(arguments = ARGS)
         elseif argument == "--preview"
             preview = true
         elseif argument in ("--n-runs", "--n_runs", "--results-dir", "--results_dir",
-                            "--package3-dir", "--package3_dir")
+                            "--mat-stability-dir", "--mat_stability_dir")
             index == length(arguments) && error("Missing value after $argument.")
             value = arguments[index + 1]
             if argument in ("--n-runs", "--n_runs")
@@ -36,7 +36,7 @@ function main(arguments = ARGS)
             elseif argument in ("--results-dir", "--results_dir")
                 results_directory = abspath(value)
             else
-                package3_directory = abspath(value)
+                mat_stability_directory = abspath(value)
             end
             index += 1
         else
@@ -45,10 +45,10 @@ function main(arguments = ARGS)
         index += 1
     end
     isnothing(count) && error("--n-runs is required.")
-    entries = import_package3!(;
+    entries = import_mat_stability!(;
         count,
         results_directory,
-        package3_directory,
+        mat_stability_directory,
         preview,
     )
     println(preview ? "Import preview:" : "Imported/selected entries:")

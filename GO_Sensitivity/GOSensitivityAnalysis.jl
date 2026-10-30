@@ -1,4 +1,4 @@
-module Package6Analysis
+module GOSensitivityAnalysis
 
 using Statistics
 

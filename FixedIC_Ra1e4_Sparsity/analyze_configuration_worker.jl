@@ -4,14 +4,14 @@ using Printf
 using SHA
 using Statistics
 
-include(joinpath(@__DIR__, "Package7Study.jl"))
-using .Package7Study
+include(joinpath(@__DIR__, "FixedICRa1e4SparsityStudy.jl"))
+using .FixedICRa1e4SparsityStudy
 
-const P7_DISTILLATION_DIRECTORY = joinpath(@__DIR__, "..", "Expert_Apprentice_Distillation")
-include(joinpath(P7_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
+const FIXED_SPARSITY_DISTILLATION_DIRECTORY = joinpath(@__DIR__, "..", "Expert_Apprentice_Distillation")
+include(joinpath(FIXED_SPARSITY_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
-const P7_TEST_STEPS = 200
+const FIXED_SPARSITY_TEST_STEPS = 200
 const THRESHOLD_COLOR_PALETTE = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
@@ -23,7 +23,7 @@ function parse_arguments(arguments)
         "results_dir" => DEFAULT_RESULTS_ROOT,
         "poll_seconds" => 60,
         "timeout_seconds" => 14 * 24 * 60 * 60,
-        "expected_updates" => P7_UPDATES,
+        "expected_updates" => FIXED_SPARSITY_UPDATES,
         "retry_failed" => false,
     )
     index = 1
@@ -68,7 +68,7 @@ end
 function wait_for_runs(options)
     jobs = [
         job_for(options.experiment_id, options.configuration, strength, replicate; updates = options.expected_updates)
-        for strength in options.strengths for replicate in P7_REPLICATES
+        for strength in options.strengths for replicate in FIXED_SPARSITY_REPLICATES
     ]
     deadline = time() + options.timeout_seconds
     seen_nonfailed = Dict(job.id => false for job in jobs)
@@ -86,11 +86,11 @@ function wait_for_runs(options)
         ]
         if !isempty(failed)
             details = join(("$(job.id): $(get(status, :error, "unknown error"))" for (job, status) in failed), "\n")
-            error("Package-7 training failed:\n$details")
+            error("Fixed-IC sparsity training failed:\n$details")
         end
         all_complete = all((!isnothing(status) && Symbol(status[:state]) === :complete) for (_, status) in statuses)
         all_complete && return jobs
-        time() >= deadline && error("Timed out waiting for Package-7 runs $(join((job.id for job in jobs), ", ")).")
+        time() >= deadline && error("Timed out waiting for Fixed-IC sparsity runs $(join((job.id for job in jobs), ", ")).")
         states = join(("$(job.id)=$(isnothing(status) ? "missing" : string(status[:state]))" for (job, status) in statuses), ", ")
         println("Waiting: $states")
         flush(stdout)
@@ -130,21 +130,21 @@ function load_run_records(options, job)
     loaded_config = JLD2.load(config_path)
     config = normalize_archive_dict(loaded_config["config"])
     checks = (
-        Symbol(config[:experiment]) === :package7_fixed_regularizer_comparison,
+        Symbol(config[:experiment]) === :fixed_sparsity_regularizer_comparison,
         string(config[:experiment_id]) == options.experiment_id,
         string(config[:configuration]) == job.configuration,
         Symbol(config[:method]) === job.method,
         Bool(config[:group_channels]) == job.group_channels,
         Int(config[:replicate]) == job.replicate,
         Float64(config[:regularization_strength]) == job.regularization_strength,
-        Int(config[:master_seed]) == P7_MASTER_SEED,
+        Int(config[:master_seed]) == FIXED_SPARSITY_MASTER_SEED,
         Int(config[:apprentice_seed]) == job.apprentice_seed,
         Int(config[:batch_order_seed]) == job.batch_seed,
         Int(config[:regularized_updates]) == options.expected_updates,
         Symbol(config[:threshold_importance_mode]) === :max_input_l1,
         Int(config[:threshold_minimum_active_groups]) == 1,
     )
-    all(checks) || error("Run $(job.id) does not match its requested Package-7 configuration.")
+    all(checks) || error("Run $(job.id) does not match its requested Fixed-IC sparsity configuration.")
     collection = load_evaluation_collection(directory)
     collection.consolidated || error("Run $(job.id) evaluations are not consolidated.")
     collection.config_fingerprint == string(loaded_config["config_fingerprint"]) || error(
@@ -180,7 +180,7 @@ function write_csv(path::AbstractString, records, front_ids)
                 Float64(record[:threshold_value]), Int(record[:active_groups]),
                 Int(record[:active_inputs]), Float64(record[:validation_matching]),
                 string(string(record[:candidate_id]) in front_ids),
-                string(Float64(record[:validation_matching]) <= P7_QUALITY_THRESHOLD),
+                string(Float64(record[:validation_matching]) <= FIXED_SPARSITY_QUALITY_THRESHOLD),
             )
         end
     end
@@ -226,7 +226,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     colors = threshold_colors(thresholds)
     traces = PlotlyJS.GenericTrace[]
     shown_thresholds = Set{Float64}()
-    for replicate in P7_REPLICATES, threshold in thresholds
+    for replicate in FIXED_SPARSITY_REPLICATES, threshold in thresholds
         selected = filter(record -> Int(record[:replicate]) == replicate && Float64(record[:threshold_value]) == threshold, records)
         show_threshold_legend = !isempty(selected) && !(threshold in shown_thresholds)
         show_threshold_legend && push!(shown_thresholds, threshold)
@@ -268,7 +268,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
         customdata = hcat(front_active_groups, front_active_inputs),
         hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<extra>pooled Pareto front</extra>",
     ))
-    for replicate in P7_REPLICATES
+    for replicate in FIXED_SPARSITY_REPLICATES
         push!(traces, PlotlyJS.scatter(
             x = [NaN],
             y = [NaN],
@@ -285,7 +285,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     end
     layout = PlotlyJS.Layout(
         template = "plotly_white",
-        title = "Package 7 $(options.configuration), λ ∈ {$(join(strengths, ", "))}",
+        title = "Fixed-IC sparsity study $(options.configuration), λ ∈ {$(join(strengths, ", "))}",
         xaxis = PlotlyJS.attr(title = "Active groups"),
         yaxis = PlotlyJS.attr(title = "Validation expert-action matching (MSE)", type = "log"),
         legend = PlotlyJS.attr(title = PlotlyJS.attr(text = "Threshold")),
@@ -295,8 +295,8 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
             x0 = 0,
             x1 = 1,
             yref = "y",
-            y0 = P7_QUALITY_THRESHOLD,
-            y1 = P7_QUALITY_THRESHOLD,
+            y0 = FIXED_SPARSITY_QUALITY_THRESHOLD,
+            y1 = FIXED_SPARSITY_QUALITY_THRESHOLD,
             line = PlotlyJS.attr(color = "#555555", width = 1.5, dash = "dash"),
         )],
     )
@@ -316,7 +316,7 @@ end
 
 function select_sparse_test_candidate(pooled_front)
     qualified = filter(
-        record -> Float64(record[:validation_matching]) <= P7_QUALITY_THRESHOLD,
+        record -> Float64(record[:validation_matching]) <= FIXED_SPARSITY_QUALITY_THRESHOLD,
         pooled_front,
     )
     isempty(qualified) && return nothing
@@ -334,11 +334,11 @@ function freeze_test_candidate!(output, candidate, checkpoint_path)
     path = joinpath(output, "selected_test_candidate.jld2")
     atomic_save(
         path;
-        schema_version = P7_SCHEMA_VERSION,
-        experiment = :package7_fixed_regularizer_comparison,
+        schema_version = FIXED_SPARSITY_SCHEMA_VERSION,
+        experiment = :fixed_sparsity_regularizer_comparison,
         selection_source = :pooled_validation_pareto_front,
         selection_rule = :minimum_active_inputs_under_quality_threshold,
-        quality_threshold = P7_QUALITY_THRESHOLD,
+        quality_threshold = FIXED_SPARSITY_QUALITY_THRESHOLD,
         selection_uses_test_data = false,
         candidate,
         checkpoint_path,
@@ -361,7 +361,7 @@ function configure_test_runtime!(candidate, output)
     ENV["REVISION_RUN_SEED"] = string(config[:apprentice_seed])
     ENV["REVISION_RUN_DIRECTORY"] = joinpath(output, "test", "runtime")
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(output, "test", "apprentice_output")
-    Base.include(@__MODULE__, joinpath(P7_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
+    Base.include(@__MODULE__, joinpath(FIXED_SPARSITY_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
     expert_metadata = Base.invokelatest(() -> getfield(@__MODULE__, :DISTILLATION_EXPERT_METADATA))
     string(expert_metadata[:identifier]) == string(config[:expert_identifier]) || error(
         "Loaded Fixed expert does not match the selected candidate's training corpus.",
@@ -384,10 +384,10 @@ function run_masked_test_episode(candidate_model, input_mask)
     nusselt_function = Base.invokelatest(() -> getfield(@__MODULE__, :state_Nu))
     Base.invokelatest(runtime_rl.reset!, runtime_env)
     Base.invokelatest(initialize_episode)
-    rewards = Vector{Float64}(undef, P7_TEST_STEPS)
-    state_nusselt = Vector{Float64}(undef, P7_TEST_STEPS)
-    actions = Matrix{Float32}(undef, P7_TEST_STEPS, 12)
-    for step in 1:P7_TEST_STEPS
+    rewards = Vector{Float64}(undef, FIXED_SPARSITY_TEST_STEPS)
+    state_nusselt = Vector{Float64}(undef, FIXED_SPARSITY_TEST_STEPS)
+    actions = Matrix{Float32}(undef, FIXED_SPARSITY_TEST_STEPS, 12)
+    for step in 1:FIXED_SPARSITY_TEST_STEPS
         action = Base.invokelatest(
             runtime_rl.prob,
             candidate_model,
@@ -399,7 +399,7 @@ function run_masked_test_episode(candidate_model, input_mask)
         rewards[step] = mean(Float64.(runtime_env.reward))
         state_nusselt[step] = Float64(Base.invokelatest(nusselt_function, runtime_env))
         isfinite(rewards[step]) && isfinite(state_nusselt[step]) || error(
-            "Non-finite Package-7 test value at step $step.",
+            "Non-finite Fixed-IC sparsity test value at step $step.",
         )
     end
     return (; rewards, state_nusselt, actions)
@@ -408,7 +408,7 @@ end
 function write_test_csv(path, episode)
     open(path, "w") do io
         println(io, "step,reward,state_nusselt")
-        for step in 1:P7_TEST_STEPS
+        for step in 1:FIXED_SPARSITY_TEST_STEPS
             println(io, "$(step),$(episode.rewards[step]),$(episode.state_nusselt[step])")
         end
     end
@@ -426,7 +426,7 @@ function make_test_plot_loaded(output, episode, candidate)
         cols = 2,
         subplot_titles = reshape(["Environment reward", "Full-state Nu"], :, 1),
     )
-    steps = collect(1:P7_TEST_STEPS)
+    steps = collect(1:FIXED_SPARSITY_TEST_STEPS)
     PlotlyJS.add_trace!(plot, PlotlyJS.scatter(
         x = steps, y = episode.rewards, mode = "lines", name = "Reward",
         line = PlotlyJS.attr(color = "#277DA1", width = 2.5),
@@ -437,7 +437,7 @@ function make_test_plot_loaded(output, episode, candidate)
     ); row = 1, col = 2)
     PlotlyJS.relayout!(plot, Dict{Symbol, Any}(
         :template => "plotly_white",
-        :title => "Masked P7 test: $(candidate[:active_inputs]) active inputs",
+        :title => "Masked Fixed-IC test: $(candidate[:active_inputs]) active inputs",
         :width => 1100,
         :height => 500,
         :xaxis => PlotlyJS.attr(title = "Control step"),
@@ -472,8 +472,8 @@ function run_selected_candidate_test!(output, selected)
     result_path = joinpath(test_directory, "test_results.jld2")
     atomic_save(
         result_path;
-        schema_version = P7_SCHEMA_VERSION,
-        experiment = :package7_masked_apprentice_test,
+        schema_version = FIXED_SPARSITY_SCHEMA_VERSION,
+        experiment = :fixed_sparsity_masked_apprentice_test,
         protocol = :fixed,
         selection_uses_test_data = false,
         selection_path,
@@ -492,7 +492,7 @@ function run_selected_candidate_test!(output, selected)
         checkpoint_path,
         checkpoint_sha256 = file_sha256(checkpoint_path),
         expert_identifier = string(config[:expert_identifier]),
-        steps = P7_TEST_STEPS,
+        steps = FIXED_SPARSITY_TEST_STEPS,
         rewards = episode.rewards,
         state_nusselt = episode.state_nusselt,
         actions = episode.actions,
@@ -570,7 +570,7 @@ function analyze_completed_runs(options, jobs)
         test_plot_path = isnothing(test) ? nothing : test.plot_path,
         completed_at = string(Dates.now()),
     )
-    println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
+    println("Completed Fixed-IC sparsity Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
     isnothing(test) && println("  selected test candidate: NR (no point under quality threshold)")
     println("  output: $output")

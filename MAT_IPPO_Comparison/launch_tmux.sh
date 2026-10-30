@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 JULIA_BIN="${JULIA_BIN:-julia}"
 RESULTS_DIR="${MAT_IPPO_RESULTS_DIR:-$SCRIPT_DIR/results}"
-PACKAGE3_DIR="${MAT_STABILITY_RESULTS_DIR:-$SCRIPT_DIR/../MAT_Stability/results}"
+MAT_STABILITY_DIR="${MAT_STABILITY_RESULTS_DIR:-$SCRIPT_DIR/../MAT_Stability/results}"
 N_RUNS=""
 LOOK_FOR_IMPORTS=""
 PROTOCOL="all"
@@ -21,13 +21,13 @@ Usage: MAT_IPPO_Comparison/launch_tmux.sh [options]
 
 Required:
   --n-runs N                     Number of seed pairs in this batch.
-  --look-for-imports true|false  Import Package-3 MAT pairs or generate new pairs.
+  --look-for-imports true|false  Import MAT-stability MAT pairs or generate new pairs.
 
 Options:
   --protocol all|fixed|varying   Default: all.
   --max-workers N                Concurrent persistent tmux slots; default: 20.
-  --results-dir PATH             Override the Package-4 result directory.
-  --package3-dir PATH            Override the Package-3 result directory.
+  --results-dir PATH             Override the MAT-IPPO comparison result directory.
+  --mat-stability-dir PATH            Override the MAT-stability result directory.
   --preview                      Print the plan and worker commands; start nothing.
   --overwrite                    Re-run matching jobs and validations.
   --openblas-threads N           OpenBLAS threads per worker; default: 3.
@@ -46,7 +46,7 @@ while (($#)); do
         --protocol) PROTOCOL="$2"; shift 2 ;;
         --max-workers|--max_workers) MAX_WORKERS="$2"; shift 2 ;;
         --results-dir|--results_dir) RESULTS_DIR="$2"; shift 2 ;;
-        --package3-dir|--package3_dir) PACKAGE3_DIR="$2"; shift 2 ;;
+        --mat-stability-dir|--mat_stability_dir) MAT_STABILITY_DIR="$2"; shift 2 ;;
         --preview) PREVIEW=true; shift ;;
         --overwrite) OVERWRITE=true; shift ;;
         --openblas-threads|--openblas_threads)
@@ -97,7 +97,7 @@ PREPARE=(
     --look-for-imports "$LOOK_FOR_IMPORTS"
     --protocol "$PROTOCOL"
     --results-dir "$RESULTS_DIR"
-    --package3-dir "$PACKAGE3_DIR"
+    --mat-stability-dir "$MAT_STABILITY_DIR"
     --jobs-file "$MANIFEST"
 )
 [[ "$PREVIEW" == true ]] && PREPARE+=(--preview)
@@ -126,7 +126,7 @@ worker_command() {
 session_name() {
     local row="$1" task run_id protocol algorithm result_path
     IFS=$'\t' read -r task run_id protocol algorithm result_path <<<"$row"
-    printf 'p4_%s_%s_%s_%s' "$algorithm" "$protocol" "$run_id" "$task"
+    printf 'cmp_%s_%s_%s_%s' "$algorithm" "$protocol" "$run_id" "$task"
 }
 
 if [[ "$PREVIEW" == true ]]; then

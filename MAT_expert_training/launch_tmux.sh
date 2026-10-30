@@ -27,7 +27,7 @@ expert.jld2 files, and replaces both tracked Distillation experts.
 
 Options:
   --results-dir PATH          Override expert-training result root.
-  --source-results-dir PATH   Override MAT-IPPO Package-4 result root.
+  --source-results-dir PATH   Override MAT-IPPO comparison result root.
   --distillation-experts-dir PATH
                               Override tracked Distillation expert root.
   --preview                   Validate and print commands; start nothing.
@@ -38,7 +38,7 @@ Options:
 Environment:
   JULIA_BIN                  Julia executable (default: julia)
   MAT_EXPERT_RESULTS_DIR     Expert-training result root
-  MAT_IPPO_RESULTS_DIR       MAT-IPPO Package-4 result root
+  MAT_IPPO_RESULTS_DIR       MAT-IPPO comparison result root
   DISTILLATION_EXPERTS_DIR   Tracked Distillation expert root
 EOF
 }

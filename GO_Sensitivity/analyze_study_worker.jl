@@ -4,13 +4,13 @@ using Printf
 using SHA
 using Statistics
 
-include(joinpath(@__DIR__, "Package6Study.jl"))
-include(joinpath(@__DIR__, "Package6Analysis.jl"))
+include(joinpath(@__DIR__, "GOSensitivityStudy.jl"))
+include(joinpath(@__DIR__, "GOSensitivityAnalysis.jl"))
 if !isdefined(@__MODULE__, :PARETO_ARCHIVE_SCHEMA_VERSION)
     include(joinpath(@__DIR__, "..", "Expert_Apprentice_Distillation", "ParetoArchive.jl"))
 end
-using .Package6Study
-using .Package6Analysis
+using .GOSensitivityStudy
+using .GOSensitivityAnalysis
 
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results", "study")
 const PROJECT_ROOT = normpath(joinpath(@__DIR__, ".."))
@@ -37,8 +37,8 @@ function parse_arguments(arguments)
     values = Dict{String, Any}(
         "protocol" => nothing,
         "results_dir" => DEFAULT_RESULTS_ROOT,
-        "poll_seconds" => P6_POLL_SECONDS,
-        "timeout_seconds" => P6_TIMEOUT_SECONDS,
+        "poll_seconds" => GO_SENSITIVITY_POLL_SECONDS,
+        "timeout_seconds" => GO_SENSITIVITY_TIMEOUT_SECONDS,
         "skip_test" => false,
         "parallel_test" => false,
     )
@@ -81,7 +81,7 @@ function write_failure_report(options, failed, missing, running)
     path = joinpath(analysis_directory(options), "failure_report.md")
     mkpath(dirname(path))
     open(path, "w") do io
-        println(io, "# Package 6 $(options.protocol) analysis failure\n")
+        println(io, "# GO-sensitivity study $(options.protocol) analysis failure\n")
         println(io, "Generated: $(Dates.now())\n")
         if !isempty(failed)
             println(io, "## Explicitly failed training runs\n")
@@ -177,17 +177,17 @@ function audit_runs(options, jobs)
     Set(run.job.id for run in runs) == Set(keys(expected_keys)) || error("Run identity set mismatch.")
     for run in runs
         config = run.config
-        Symbol(config[:scientific_scope]) === :package6 || error("Smoke/non-production config in $(run.job.id).")
+        Symbol(config[:scientific_scope]) === :go_sensitivity || error("Smoke/non-production config in $(run.job.id).")
         Symbol(config[:protocol]) === options.protocol || error("Protocol mismatch in $(run.job.id).")
         Symbol(config[:method]) === run.job.method || error("Method mismatch in $(run.job.id).")
-        Bool(config[:group_channels]) == false || error("Package 6 must use separate channels.")
-        Bool(config[:native_sparsity_only]) || error("Package 6 must use native sparsity.")
+        Bool(config[:group_channels]) == false || error("GO-sensitivity study must use separate channels.")
+        Bool(config[:native_sparsity_only]) || error("GO-sensitivity study must use native sparsity.")
         Int(config[:regularized_updates]) == run.job.updates || error("Update budget mismatch in $(run.job.id).")
-        Int(config[:batch_size]) == P6_TRAINING_BATCH_SIZE[options.protocol] || error("Training batch-size mismatch in $(run.job.id).")
-        Int(config[:validation_batch_size]) == P6_VALIDATION_BATCH_SIZE[options.protocol] || error("Validation batch-size mismatch in $(run.job.id).")
-        Int(config[:evaluation_interval]) == P6_EVALUATION_INTERVAL || error("Evaluation interval mismatch.")
-        Float64(config[:regression_learning_rate]) == P6_REGRESSION_LEARNING_RATE || error("Regression LR mismatch.")
-        Float64.(config[:go_strength_grid]) == collect(P6_STRENGTHS[options.protocol]) || error("GO strength-grid mismatch.")
+        Int(config[:batch_size]) == GO_SENSITIVITY_TRAINING_BATCH_SIZE[options.protocol] || error("Training batch-size mismatch in $(run.job.id).")
+        Int(config[:validation_batch_size]) == GO_SENSITIVITY_VALIDATION_BATCH_SIZE[options.protocol] || error("Validation batch-size mismatch in $(run.job.id).")
+        Int(config[:evaluation_interval]) == GO_SENSITIVITY_EVALUATION_INTERVAL || error("Evaluation interval mismatch.")
+        Float64(config[:regression_learning_rate]) == GO_SENSITIVITY_REGRESSION_LEARNING_RATE || error("Regression LR mismatch.")
+        Float64.(config[:go_strength_grid]) == collect(GO_SENSITIVITY_STRENGTHS[options.protocol]) || error("GO strength-grid mismatch.")
         # This threshold controls analysis-time candidate acceptance only. Its
         # archived launch value must not prevent reanalysis with a new limit.
         haskey(config, :quality_threshold) || error("Stored quality-threshold metadata is missing.")
@@ -238,7 +238,7 @@ end
 function build_metrics(audit)
     runs = audit.runs
     protocol = only(unique(run.job.protocol for run in runs))
-    quality_threshold = P6_QUALITY_THRESHOLDS[protocol]
+    quality_threshold = GO_SENSITIVITY_QUALITY_THRESHOLDS[protocol]
     run_fronts = Dict(run.job.id => scientific_front(run.records) for run in runs)
     strength_fronts = Dict{Tuple{Symbol, Int}, Vector{Dict{Symbol, Any}}}()
     for method in (:go, :gr)
@@ -364,8 +364,8 @@ function make_plots_loaded(options, audit, metrics)
     output = joinpath(analysis_directory(options), "plots")
     mkpath(output)
     paths = Dict{Symbol, Any}()
-    strengths = P6_STRENGTHS[options.protocol]
-    quality_threshold = P6_QUALITY_THRESHOLDS[options.protocol]
+    strengths = GO_SENSITIVITY_STRENGTHS[options.protocol]
+    quality_threshold = GO_SENSITIVITY_QUALITY_THRESHOLDS[options.protocol]
     pareto_traces = PlotlyJS.GenericTrace[]
     for run in audit.runs
         front = metrics.run_fronts[run.job.id]
@@ -391,7 +391,7 @@ function make_plots_loaded(options, audit, metrics)
             ))
         end
     end
-    pareto_plot = Plot(pareto_traces, Layout(template = "plotly_white", width = 950, height = 600, title = "Package 6 $(options.protocol): native SC Pareto fronts", xaxis = attr(title = "Active SC groups (lower is sparser)"), yaxis = attr(title = "Autoregressive validation MSE", type = "log")))
+    pareto_plot = Plot(pareto_traces, Layout(template = "plotly_white", width = 950, height = 600, title = "GO-sensitivity study $(options.protocol): native SC Pareto fronts", xaxis = attr(title = "Active SC groups (lower is sparser)"), yaxis = attr(title = "Autoregressive validation MSE", type = "log")))
     paths[:pareto] = save_svg(pareto_plot, joinpath(output, "pareto.svg"); width = 950, height = 600)
 
     group_traces = PlotlyJS.GenericTrace[]
@@ -468,7 +468,7 @@ function make_plots_loaded(options, audit, metrics)
             mode = "lines", name = run.job.id, line = attr(color = strength_color(run.job.strength_index), width = 3),
         ))
     end
-    plot3d = Plot(traces3d, Layout(title = "Package 6 $(options.protocol) training trajectories", scene = attr(xaxis = attr(title = "Active SC groups"), yaxis = attr(title = "log10 validation MSE"), zaxis = attr(title = "Update"))))
+    plot3d = Plot(traces3d, Layout(title = "GO-sensitivity study $(options.protocol) training trajectories", scene = attr(xaxis = attr(title = "Active SC groups"), yaxis = attr(title = "log10 validation MSE"), zaxis = attr(title = "Update"))))
     html_path = joinpath(output, "trajectories_3d.html")
     open(html_path, "w") do io
         show(io, MIME"text/html"(), plot3d)
@@ -479,7 +479,7 @@ end
 
 function freeze_candidate_manifest(options, audit, metrics)
     all_go = reduce(vcat, [run.records for run in audit.runs if run.job.method === :go])
-    quality_threshold = P6_QUALITY_THRESHOLDS[options.protocol]
+    quality_threshold = GO_SENSITIVITY_QUALITY_THRESHOLDS[options.protocol]
     match, sparse, _ = select_test_candidates(all_go; mse_threshold = quality_threshold)
     selected = Dict{Symbol, Any}[]
     for (role, candidate) in ((:C_match, match), (:C_sparse, sparse))
@@ -506,8 +506,8 @@ function freeze_candidate_manifest(options, audit, metrics)
     length(expert_paths) == 1 || error("Runs record different expert paths.")
     atomic_save(
         path;
-        schema_version = P6_SCHEMA_VERSION,
-        experiment = :package6_sc_go_sensitivity,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
+        experiment = :go_sensitivity_sc,
         protocol = options.protocol,
         selection_source = :pooled_native_go_validation_front,
         selection_uses_test_data = false,
@@ -536,16 +536,16 @@ function write_report(options, audit, metrics, paths, manifest_path, test_result
     path = joinpath(analysis_directory(options), "report.md")
     selected = JLD2.load(manifest_path)["candidates"]
     open(path, "w") do io
-        println(io, "# Package 6 SC-GO sensitivity and stability study — $(uppercasefirst(string(options.protocol))) IC\n")
+        println(io, "# GO-sensitivity study SC-GO sensitivity and stability study — $(uppercasefirst(string(options.protocol))) IC\n")
         println(io, "Generated: $(Dates.now())\n")
         println(io, "## Scope and frozen protocol\n")
         println(io, "This report covers Separate-Channel grouping only. It audits 15 GO runs (five strengths × three paired replicates) and three paired GR reference runs. All runs use native sparsity, regression learning rate `2e-4`, validation every 25 updates from update 0, no result-dependent stopping, no fine-tuning, and no hard thresholding. The technical strength calibration is not part of this scientific study.\n")
-        println(io, "- GO strengths: `$(join(P6_STRENGTHS[options.protocol], "`, `"))`")
-        println(io, "- GR reference strength: `$(P6_GR_STRENGTH[options.protocol])`")
-        println(io, "- Sparse-candidate quality threshold: `$(P6_QUALITY_THRESHOLDS[options.protocol])`")
-        println(io, "- Training updates: `$(P6_UPDATES[options.protocol])`")
-        println(io, "- Training/validation batch sizes: `$(P6_TRAINING_BATCH_SIZE[options.protocol])` / `$(P6_VALIDATION_BATCH_SIZE[options.protocol])`")
-        println(io, "- Master seed: `$(P6_MASTER_SEED)`; replicate seed pairs: `$(join(("r$(r)=$(seed_plan(r).apprentice_seed)/$(seed_plan(r).batch_seed)" for r in 1:3), ", "))`\n")
+        println(io, "- GO strengths: `$(join(GO_SENSITIVITY_STRENGTHS[options.protocol], "`, `"))`")
+        println(io, "- GR reference strength: `$(GO_SENSITIVITY_GR_STRENGTH[options.protocol])`")
+        println(io, "- Sparse-candidate quality threshold: `$(GO_SENSITIVITY_QUALITY_THRESHOLDS[options.protocol])`")
+        println(io, "- Training updates: `$(GO_SENSITIVITY_UPDATES[options.protocol])`")
+        println(io, "- Training/validation batch sizes: `$(GO_SENSITIVITY_TRAINING_BATCH_SIZE[options.protocol])` / `$(GO_SENSITIVITY_VALIDATION_BATCH_SIZE[options.protocol])`")
+        println(io, "- Master seed: `$(GO_SENSITIVITY_MASTER_SEED)`; replicate seed pairs: `$(join(("r$(r)=$(seed_plan(r).apprentice_seed)/$(seed_plan(r).batch_seed)" for r in 1:3), ", "))`\n")
         println(io, "## Audit\n")
         println(io, "PASS. Exactly 15 GO and 3 GR runs were complete. Configuration fingerprints, expert and corpus identities, update budgets, evaluation coverage, paired apprentice/batch seeds, and initial apprentice parameter hashes were consistent. Test data did not enter training or candidate selection.\n")
         println(io, "## Run summary\n")
@@ -596,7 +596,7 @@ function write_report(options, audit, metrics, paths, manifest_path, test_result
             end
         end
         println(io, "\n## Validation-only candidate freeze\n")
-        println(io, "The immutable [candidate manifest](candidate_manifest.jld2) was written before any terminal rollout. `C_match` minimizes validation MSE on the pooled native GO front. `C_sparse`, when distinct and available, minimizes active SC groups subject to validation MSE ≤ $(P6_QUALITY_THRESHOLDS[options.protocol]). Test results cannot change this manifest.\n")
+        println(io, "The immutable [candidate manifest](candidate_manifest.jld2) was written before any terminal rollout. `C_match` minimizes validation MSE on the pooled native GO front. `C_sparse`, when distinct and available, minimizes active SC groups subject to validation MSE ≤ $(GO_SENSITIVITY_QUALITY_THRESHOLDS[options.protocol]). Test results cannot change this manifest.\n")
         for raw in selected
             candidate = Dict{Symbol, Any}(Symbol(key) => value for (key, value) in raw)
             @printf(io, "- `%s`: run `%s`, λ=%.6g, update %d, %d active groups, validation MSE %.6e.\n", string(candidate[:selection_role]), string(candidate[:run_id]), Float64(candidate[:regularization_strength]), Int(candidate[:update]), Int(candidate[:active_groups]), Float64(candidate[:validation_matching]))
@@ -627,7 +627,7 @@ function write_report(options, audit, metrics, paths, manifest_path, test_result
             println(io, "- [Per-case test returns](test/test_returns.csv)")
         end
         println(io, "\n## Interpretation boundary\n")
-        println(io, "Strength effects are reported descriptively and with within-replicate Spearman rank correlations. With three replicates, no inferential significance claim is made. GR is an offline stability reference only and never participates in closed-loop candidate selection. Package 7/8 will add GC, SC thresholding, and further regularizers.")
+        println(io, "Strength effects are reported descriptively and with within-replicate Spearman rank correlations. With three replicates, no inferential significance claim is made. GR is an offline stability reference only and never participates in closed-loop candidate selection. sparsity studies will add GC, SC thresholding, and further regularizers.")
     end
     return path
 end
@@ -690,10 +690,10 @@ function persist_metrics(options, audit, metrics)
     path = joinpath(directory, "metrics.jld2")
     atomic_save(
         path;
-        schema_version = P6_SCHEMA_VERSION,
-        experiment = :package6_sc_go_sensitivity,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
+        experiment = :go_sensitivity_sc,
         protocol = options.protocol,
-        quality_threshold = P6_QUALITY_THRESHOLDS[options.protocol],
+        quality_threshold = GO_SENSITIVITY_QUALITY_THRESHOLDS[options.protocol],
         generated_at = string(Dates.now()),
         run_fronts = metrics.run_fronts,
         strength_fronts = metrics.strength_fronts,
@@ -736,7 +736,7 @@ function analyze_study(options)
         terminal_test_result = test_result,
         completed_at = string(Dates.now()),
     )
-    println("Package 6 $(options.protocol) analysis complete: $report")
+    println("GO-sensitivity study $(options.protocol) analysis complete: $report")
     return report
 end
 
@@ -747,7 +747,7 @@ function record_analysis_failure(options, error_value, backtrace_value)
     backtrace_text = sprint(Base.show_backtrace, backtrace_value)
     report = joinpath(directory, "analysis_failure_report.md")
     open(report, "w") do io
-        println(io, "# Package 6 $(options.protocol) analysis failure\n")
+        println(io, "# GO-sensitivity study $(options.protocol) analysis failure\n")
         println(io, "Generated: $(Dates.now())\n")
         println(io, "```text")
         println(io, message)

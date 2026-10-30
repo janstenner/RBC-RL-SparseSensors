@@ -12,8 +12,8 @@ protocol_selection=all
 controller_selection=all
 experiment_id=""
 declare -a explicit_levels=()
-package7_results="${script_directory}/../Package7/paper_snapshot/260830_173924"
-package8_results="${script_directory}/../Package8/paper_snapshot/260830_231109"
+fixed_sparsity_results="${script_directory}/../FixedIC_Ra1e4_Sparsity/paper_snapshot/260830_173924"
+varying_sparsity_results="${script_directory}/../VaryingIC_Ra1e4_Sparsity/paper_snapshot/260830_231109"
 go_study_results="${script_directory}/../GO_Sensitivity/paper_snapshot"
 baseline_results="${script_directory}/../Baselines/results"
 distillation_root="${script_directory}/../Expert_Apprentice_Distillation"
@@ -41,8 +41,8 @@ protocols. One session owns all cases and replicates for its combination.
                             0.30, 0.40, 0.50, 0.70, 1.00.
   --experiment-id ID        Reuse an existing experiment; generated otherwise.
   --results-dir PATH
-  --package7-results PATH
-  --package8-results PATH
+  --fixed-sparsity-results PATH
+  --varying-sparsity-results PATH
   --go-study-results PATH
   --baseline-results PATH
   --distillation-root PATH
@@ -65,8 +65,8 @@ while (($#)); do
         --noise-level) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; explicit_levels+=("$2"); shift 2 ;;
         --experiment-id) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; experiment_id="$2"; shift 2 ;;
         --results-dir) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; results_directory="$2"; shift 2 ;;
-        --package7-results) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; package7_results="$2"; shift 2 ;;
-        --package8-results) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; package8_results="$2"; shift 2 ;;
+        --fixed-sparsity-results) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; fixed_sparsity_results="$2"; shift 2 ;;
+        --varying-sparsity-results) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; varying_sparsity_results="$2"; shift 2 ;;
         --go-study-results) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; go_study_results="$2"; shift 2 ;;
         --baseline-results) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; baseline_results="$2"; shift 2 ;;
         --distillation-root) (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }; distillation_root="$2"; shift 2 ;;
@@ -153,13 +153,13 @@ for protocol in "${protocols[@]}"; do
     if [[ "${preview}" == true ]]; then
         echo "Would prepare/reuse manifest: ${manifest}"
     elif [[ ! -f "${manifest}" || "${rebuild_manifest}" == true ]]; then
-        package_results="${package7_results}"
-        [[ "${protocol}" == fixed ]] || package_results="${package8_results}"
+        sparsity_results="${fixed_sparsity_results}"
+        [[ "${protocol}" == fixed ]] || sparsity_results="${varying_sparsity_results}"
         manifest_log="${launch_directory}/manifest_${protocol}.log"
         echo "Preparing ${protocol} manifest; log: ${manifest_log}"
         "${julia_binary}" --startup-file=no "--project=${project_root}" "${manifest_worker}" \
             --protocol "${protocol}" --experiment-id "${experiment_id}" --output "${manifest}" \
-            --package-results "${package_results}" --go-study-results "${go_study_results}" \
+            --sparsity-results "${sparsity_results}" --go-study-results "${go_study_results}" \
             --baseline-results "${baseline_results}" --distillation-root "${distillation_root}" \
             > "${manifest_log}" 2>&1
     else
@@ -169,7 +169,7 @@ for protocol in "${protocols[@]}"; do
     for level in "${levels[@]}"; do
         tag="$(level_tag "${level}")"
         for controller in "${controllers[@]}"; do
-            session="p10_${experiment_id}_${protocol}_${controller}_${tag}"
+            session="noise_${experiment_id}_${protocol}_${controller}_${tag}"
             session="${session//-/_}"
             logfile="${log_directory}/${session}.log"
             command=(

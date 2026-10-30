@@ -351,7 +351,7 @@ Generate all episodes owned by one worker. Varying-IC workers own one
 `(split, base_seed, mirror)` combination. Training workers evaluate all 96
 offsets; validation and test workers evaluate the fixed offsets 0 and 20.
 The Fixed-IC worker owns one shared episode. Environment-specific behavior is
-supplied through four callbacks, so every Package-6/7/8 worker uses this same
+supplied through four callbacks, so every GO-sensitivity/7/8 worker uses this same
 generation function.
 """
 function generate_distillation_worker!(

@@ -117,7 +117,7 @@ const CANDIDATES = (
         validation_score = -593.0080725637902,
         run_seed = 1_987_317_423,
         ic_seed = 60_237_239,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :fixed,
@@ -135,7 +135,7 @@ const CANDIDATES = (
         validation_score = -594.9301747976292,
         run_seed = 1_241_319_044,
         ic_seed = 83_126_739,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :fixed,
@@ -153,7 +153,7 @@ const CANDIDATES = (
         validation_score = -598.6395111651227,
         run_seed = 1_422_047_759,
         ic_seed = 627_765_402,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :fixed,
@@ -171,7 +171,7 @@ const CANDIDATES = (
         validation_score = -602.7203153676935,
         run_seed = 686_791_604,
         ic_seed = 493_568_598,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :fixed,
@@ -189,7 +189,7 @@ const CANDIDATES = (
         validation_score = -609.483440542703,
         run_seed = 319_470_045,
         ic_seed = 1_788_533_232,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :varying,
@@ -207,7 +207,7 @@ const CANDIDATES = (
         validation_score = -621.5046799648103,
         run_seed = 1_422_047_759,
         ic_seed = 627_765_402,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :varying,
@@ -225,7 +225,7 @@ const CANDIDATES = (
         validation_score = -625.3938140617716,
         run_seed = 1_987_317_423,
         ic_seed = 60_237_239,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :varying,
@@ -243,7 +243,7 @@ const CANDIDATES = (
         validation_score = -628.7449545348579,
         run_seed = 1_241_319_044,
         ic_seed = 83_126_739,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :varying,
@@ -252,7 +252,7 @@ const CANDIDATES = (
         validation_score = -633.5548083921888,
         run_seed = 686_791_604,
         ic_seed = 493_568_598,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :varying,
@@ -261,7 +261,7 @@ const CANDIDATES = (
         validation_score = -641.0630750222932,
         run_seed = 319_470_045,
         ic_seed = 1_788_533_232,
-        origin = :imported_package3,
+        origin = :imported_mat_stability,
     ),
     (
         protocol = :varying,

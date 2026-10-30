@@ -6,7 +6,7 @@ project_root="$(cd "${script_directory}/.." && pwd)"
 training_worker="${script_directory}/run_training_worker.jl"
 analysis_worker="${script_directory}/analyze_configuration_worker.jl"
 manifest_worker="${script_directory}/prepare_manifest.jl"
-results_directory="${P7_RESULTS_DIR:-${script_directory}/results}"
+results_directory="${VARYING_SPARSITY_RESULTS_DIR:-${script_directory}/results}"
 julia_binary="${JULIA_BIN:-julia}"
 
 configuration_selection="all"
@@ -27,7 +27,7 @@ usage() {
     cat <<'EOF'
 Usage: launch_tmux.sh [options]
 
-Without filters, starts all eight Package-7 configurations at their configured
+Without filters, starts all eight Varying-IC sparsity configurations at their configured
 three-strength grids: 72 training workers and eight analysis/wait workers.
 
 Options:
@@ -43,7 +43,7 @@ Options:
   --preview             Print all planned sessions without writing or launching.
   --analysis-only       Start only the selected analysis/wait worker(s).
   --retry-failed        Permit training workers to resume failed runs.
-  --results-dir PATH    Override the Package-7 result root.
+  --results-dir PATH    Override the Varying-IC sparsity result root.
   --openblas-threads N  OpenBLAS threads per worker (default: 3).
   --omp-threads N       OpenMP threads per worker (default: 1).
   --help                Show this help.
@@ -129,7 +129,7 @@ for threshold in "${explicit_thresholds[@]}"; do
 done
 variant_output="$("${julia_binary}" --startup-file=no "--project=${project_root}" "${manifest_worker}" "${variant_arguments[@]}")"
 mapfile -t variant_rows <<< "${variant_output}"
-((${#variant_rows[@]} > 0)) || { echo "No Package-7 variants selected." >&2; exit 2; }
+((${#variant_rows[@]} > 0)) || { echo "No Varying-IC sparsity variants selected." >&2; exit 2; }
 
 declare -A strengths_by_configuration=()
 selected_configurations=()
@@ -213,7 +213,7 @@ for configuration in "${selected_configurations[@]}"; do
         if [[ "${analysis_only}" == false ]]; then
             for replicate in 1 2 3; do
                 replicate_tag="$(printf 'r%02d' "${replicate}")"
-                session="p7_${experiment_id}_${configuration_tag}_${strength_session_tag}_${replicate_tag}"
+                session="vs_${experiment_id}_${configuration_tag}_${strength_session_tag}_${replicate_tag}"
                 command=(
                     "${julia_binary}" --startup-file=no "--project=${project_root}" "${training_worker}"
                     --experiment-id "${experiment_id}" --config "${configuration}" --strength "${strength}"
@@ -227,7 +227,7 @@ for configuration in "${selected_configurations[@]}"; do
             done
         fi
     done
-    session="p7_${experiment_id}_${configuration_tag}_analyze"
+    session="vs_${experiment_id}_${configuration_tag}_analyze"
     analysis_command=(
         "${julia_binary}" --startup-file=no "--project=${project_root}" "${analysis_worker}"
         --experiment-id "${experiment_id}" --config "${configuration}" --results-dir "${results_directory}"
@@ -272,3 +272,4 @@ echo "All sessions close automatically when their worker exits."
 echo "Launch manifest: ${job_manifest}"
 echo "Inspect sessions: tmux ls"
 [[ -z "${first_session}" ]] || echo "Attach: tmux attach -t ${first_session}"
+

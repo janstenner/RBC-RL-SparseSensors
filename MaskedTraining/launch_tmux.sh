@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 JULIA_BIN="${JULIA_BIN:-julia}"
-RESULTS_DIR="${PACKAGE11_RESULTS_DIR:-$SCRIPT_DIR/results}"
+RESULTS_DIR="${MASKED_TRAINING_RESULTS_DIR:-$SCRIPT_DIR/results}"
 COMPARISON_DIR="$SCRIPT_DIR/../MAT_IPPO_Comparison/results"
-PACKAGE7_RESULTS="$SCRIPT_DIR/../Package7/paper_snapshot/260830_173924"
-PACKAGE8_RESULTS="$SCRIPT_DIR/../Package8/paper_snapshot/260830_231109"
+FIXED_SPARSITY_RESULTS="$SCRIPT_DIR/../FixedIC_Ra1e4_Sparsity/paper_snapshot/260830_173924"
+VARYING_SPARSITY_RESULTS="$SCRIPT_DIR/../VaryingIC_Ra1e4_Sparsity/paper_snapshot/260830_231109"
 PROTOCOL=all
 GROUPING=all
 PREVIEW=false
@@ -26,8 +26,8 @@ Completed runs and active sessions are skipped; failed runs restart from seed.
   --grouping all|gc|sc
   --results-dir PATH
   --comparison-dir PATH
-  --package7-results PATH
-  --package8-results PATH
+  --fixed-sparsity-results PATH
+  --varying-sparsity-results PATH
   --openblas-threads N          Default: 3.
   --omp-threads N               Default: 1.
   --preview                    Validate inputs and print commands; start nothing.
@@ -39,15 +39,15 @@ while (($#)); do
     case "$1" in
         --preview) PREVIEW=true; shift ;;
         --help) usage; exit 0 ;;
-        --protocol|--grouping|--results-dir|--comparison-dir|--package7-results|--package8-results|--openblas-threads|--omp-threads)
+        --protocol|--grouping|--results-dir|--comparison-dir|--fixed-sparsity-results|--varying-sparsity-results|--openblas-threads|--omp-threads)
             (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
             case "$1" in
                 --protocol) PROTOCOL="$2" ;;
                 --grouping) GROUPING="$2" ;;
                 --results-dir) RESULTS_DIR="$2" ;;
                 --comparison-dir) COMPARISON_DIR="$2" ;;
-                --package7-results) PACKAGE7_RESULTS="$2" ;;
-                --package8-results) PACKAGE8_RESULTS="$2" ;;
+                --fixed-sparsity-results) FIXED_SPARSITY_RESULTS="$2" ;;
+                --varying-sparsity-results) VARYING_SPARSITY_RESULTS="$2" ;;
                 --openblas-threads) OPENBLAS_THREADS="$2" ;;
                 --omp-threads) OMP_THREADS="$2" ;;
             esac
@@ -75,7 +75,7 @@ else
 fi
 PREPARE=("$JULIA_BIN" --startup-file=no "--project=$PROJECT_ROOT" "$SCRIPT_DIR/prepare_runs.jl"
     --results-dir "$RESULTS_DIR" --comparison-dir "$COMPARISON_DIR"
-    --package7-results "$PACKAGE7_RESULTS" --package8-results "$PACKAGE8_RESULTS"
+    --fixed-sparsity-results "$FIXED_SPARSITY_RESULTS" --varying-sparsity-results "$VARYING_SPARSITY_RESULTS"
     --protocol "$PROTOCOL" --grouping "$GROUPING" --jobs-file "$MANIFEST")
 [[ "$PREVIEW" == true ]] && PREPARE+=(--preview)
 "${PREPARE[@]}"
@@ -84,7 +84,7 @@ started=0
 first_session=""
 for row in "${JOBS[@]}"; do
     IFS=$'\t' read -r protocol grouping run_id <<<"$row"
-    session="p11_${protocol}_${grouping}_${run_id}"
+    session="masked_${protocol}_${grouping}_${run_id}"
     COMMAND=("$JULIA_BIN" --startup-file=no "--project=$PROJECT_ROOT" "$SCRIPT_DIR/run_worker.jl"
         --results-dir "$RESULTS_DIR" --protocol "$protocol" --grouping "$grouping" --run-id "$run_id")
     printf -v command '%q ' "${COMMAND[@]}"

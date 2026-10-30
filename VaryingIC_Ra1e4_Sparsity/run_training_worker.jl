@@ -4,17 +4,17 @@ using Printf
 using SHA
 using StableRNGs
 
-include(joinpath(@__DIR__, "Package8Study.jl"))
-using .Package8Study
+include(joinpath(@__DIR__, "VaryingICRa1e4SparsityStudy.jl"))
+using .VaryingICRa1e4SparsityStudy
 
-const P8_DIRECTORY = @__DIR__
-const P8_PROJECT_ROOT = normpath(joinpath(P8_DIRECTORY, ".."))
-const P8_DISTILLATION_DIRECTORY = joinpath(P8_PROJECT_ROOT, "Expert_Apprentice_Distillation")
-const P8_DEFAULT_RESULTS_ROOT = joinpath(P8_DIRECTORY, "results")
+const VARYING_SPARSITY_DIRECTORY = @__DIR__
+const VARYING_SPARSITY_PROJECT_ROOT = normpath(joinpath(VARYING_SPARSITY_DIRECTORY, ".."))
+const VARYING_SPARSITY_DISTILLATION_DIRECTORY = joinpath(VARYING_SPARSITY_PROJECT_ROOT, "Expert_Apprentice_Distillation")
+const VARYING_SPARSITY_DEFAULT_RESULTS_ROOT = joinpath(VARYING_SPARSITY_DIRECTORY, "results")
 
 function worker_usage(io::IO = stdout)
     println(io, """
-    Package-8 Varying-IC training worker.
+    Varying-IC sparsity training worker.
 
     Usage:
       julia --project=. run_training_worker.jl --experiment-id ID --config NAME --strength VALUE \\
@@ -29,7 +29,7 @@ function parse_worker_arguments(arguments)
         "config" => nothing,
         "strength" => nothing,
         "replicate" => nothing,
-        "results_dir" => P8_DEFAULT_RESULTS_ROOT,
+        "results_dir" => VARYING_SPARSITY_DEFAULT_RESULTS_ROOT,
         "retry_failed" => false,
         "smoke_updates" => nothing,
         "thresholds" => Float64[],
@@ -64,7 +64,7 @@ function parse_worker_arguments(arguments)
     replicate = parse(Int, string(values["replicate"]))
     smoke_updates = isnothing(values["smoke_updates"]) ? nothing : parse(Int, string(values["smoke_updates"]))
     !isnothing(smoke_updates) && smoke_updates < 0 && error("--smoke-updates must be nonnegative.")
-    updates = isnothing(smoke_updates) ? P8_UPDATES : smoke_updates
+    updates = isnothing(smoke_updates) ? VARYING_SPARSITY_UPDATES : smoke_updates
     return (
         job = job_for(values["experiment_id"], values["config"], strength, replicate; updates),
         results_root = abspath(string(values["results_dir"])),
@@ -77,7 +77,7 @@ end
 function configure_worker_environment!(options)
     job = options.job
     directory = run_directory(options.results_root, job)
-    expert_path = joinpath(P8_DISTILLATION_DIRECTORY, "experts", "varying", "agent.jld2")
+    expert_path = joinpath(VARYING_SPARSITY_DISTILLATION_DIRECTORY, "experts", "varying", "agent.jld2")
     ENV["DISTILLATION_PROTOCOL"] = "varying"
     ENV["DISTILLATION_AUTOLOAD_PROTOCOL"] = "varying"
     ENV["DISTILLATION_SKIP_AUTOLOAD"] = "false"
@@ -86,7 +86,7 @@ function configure_worker_environment!(options)
     ENV["DISTILLATION_VARYING_EXPERT_PATH"] = expert_path
     # Restrict discovery to the canonical Varying corpus directory so archived
     # worker_results/old files cannot introduce duplicate worker identities.
-    ENV["DISTILLATION_WORKER_DIRECTORY"] = joinpath(P8_DISTILLATION_DIRECTORY, "worker_results", "varying")
+    ENV["DISTILLATION_WORKER_DIRECTORY"] = joinpath(VARYING_SPARSITY_DISTILLATION_DIRECTORY, "worker_results", "varying")
     ENV["DISTILLATION_ALLOW_FRESH_EXPERT"] = "false"
     ENV["REVISION_RUN_DIRECTORY"] = joinpath(directory, "runtime")
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(directory, "apprentice_output")
@@ -133,7 +133,7 @@ end
 function threshold_specs(thresholds)
     return [
         HardThresholdSpec(Symbol("threshold_", replace(string(value), "." => "p")), :absolute, value;
-                          analysis_scope = :package8)
+                          analysis_scope = :varying_sparsity)
         for value in thresholds[2:end]
     ]
 end
@@ -141,10 +141,10 @@ end
 function archive_config(options, training_config, expert_path, inputs, initial_hash)
     job = options.job
     return Dict{Symbol, Any}(
-        :schema_version => P8_SCHEMA_VERSION,
-        :experiment => :package8_varying_regularizer_comparison,
+        :schema_version => VARYING_SPARSITY_SCHEMA_VERSION,
+        :experiment => :varying_sparsity_regularizer_comparison,
         :experiment_id => job.experiment_id,
-        :scientific_scope => isnothing(options.smoke_updates) ? :package8 : :smoke_test,
+        :scientific_scope => isnothing(options.smoke_updates) ? :varying_sparsity : :smoke_test,
         :protocol => :varying,
         :training_data_split => :train,
         :validation_data_split => :validation,
@@ -157,17 +157,17 @@ function archive_config(options, training_config, expert_path, inputs, initial_h
         :regularization_strength => job.regularization_strength,
         :replicate => job.replicate,
         :pairing_hash => job.pairing_hash,
-        :master_seed => P8_MASTER_SEED,
+        :master_seed => VARYING_SPARSITY_MASTER_SEED,
         :apprentice_seed => job.apprentice_seed,
         :batch_order_seed => job.batch_seed,
-        :regression_learning_rate => P8_LEARNING_RATE,
+        :regression_learning_rate => VARYING_SPARSITY_LEARNING_RATE,
         :regularized_updates => job.updates,
         :post_pruning_finetune_updates => 0,
         :batch_size => training_config.batch_size,
         :validation_batch_size => training_config.validation_batch_size,
         :validation_prediction_mode => training_config.validation_prediction_mode,
         :diagnostic_teacher_forced => training_config.diagnostic_teacher_forced,
-        :evaluation_interval => P8_EVALUATION_INTERVAL,
+        :evaluation_interval => VARYING_SPARSITY_EVALUATION_INTERVAL,
         :threshold_values => copy(options.thresholds),
         :threshold_mode => :absolute,
         :threshold_importance_mode => :max_input_l1,
@@ -176,7 +176,7 @@ function archive_config(options, training_config, expert_path, inputs, initial_h
         :require_threshold_group_reduction => true,
         :active_inputs_definition => :global_expanded_sensor_channel_inputs,
         :pareto_objectives => (:active_inputs, :validation_matching),
-        :pareto_scope => :package8_thresholds,
+        :pareto_scope => :varying_sparsity_thresholds,
         :slim_evaluation_records => true,
         :result_dependent_stopping => false,
         :initial_apprentice_parameter_hash => initial_hash,
@@ -192,8 +192,8 @@ end
 function save_summary!(manager, job, losses, elapsed_seconds)
     return pareto_atomic_save(
         joinpath(manager.run_directory, "summary.jld2");
-        schema_version = P8_SCHEMA_VERSION,
-        experiment = :package8_varying_regularizer_comparison,
+        schema_version = VARYING_SPARSITY_SCHEMA_VERSION,
+        experiment = :varying_sparsity_regularizer_comparison,
         experiment_id = job.experiment_id,
         completed_at = string(Dates.now()),
         run_id = job.id,
@@ -213,8 +213,8 @@ end
 
 function run_loaded_worker(options, directory, expert_path)
     job = options.job
-    Float64(learning_rate) == P8_LEARNING_RATE || error(
-        "Loaded learning rate $learning_rate does not match Package-8 value $P8_LEARNING_RATE.",
+    Float64(learning_rate) == VARYING_SPARSITY_LEARNING_RATE || error(
+        "Loaded learning rate $learning_rate does not match Varying-IC sparsity value $VARYING_SPARSITY_LEARNING_RATE.",
     )
     inputs = assert_varying_inputs(expert_path)
     initial_model = deepcopy(apprentice)
@@ -222,19 +222,19 @@ function run_loaded_worker(options, directory, expert_path)
     training_config = ApprenticeTrainingConfig(
         regularized_updates = job.updates,
         post_pruning_finetune_updates = 0,
-        batch_size = P8_BATCH_SIZE,
+        batch_size = VARYING_SPARSITY_BATCH_SIZE,
         proximal_interval = 1,
         reweight_interval = 10,
         regularization_strength = job.regularization_strength,
-        validation_batch_size = P8_VALIDATION_BATCH_SIZE,
+        validation_batch_size = VARYING_SPARSITY_VALIDATION_BATCH_SIZE,
         validation_prediction_mode = :autoregressive,
         diagnostic_teacher_forced = false,
     )
     schedule = CandidateSchedule(
         start_update = 0,
-        evaluation_interval = P8_EVALUATION_INTERVAL,
-        garbage_collection_interval = P8_GARBAGE_COLLECTION_INTERVAL,
-        resume_interval = P8_RESUME_INTERVAL,
+        evaluation_interval = VARYING_SPARSITY_EVALUATION_INTERVAL,
+        garbage_collection_interval = VARYING_SPARSITY_GARBAGE_COLLECTION_INTERVAL,
+        resume_interval = VARYING_SPARSITY_RESUME_INTERVAL,
     )
     config = archive_config(options, training_config, expert_path, inputs, initial_hash)
     manager = initialize_pareto_archive(directory; run_id = job.id, schedule, config)
@@ -282,11 +282,11 @@ function run_loaded_worker(options, directory, expert_path)
         started_at = string(Dates.now()),
     )
 
-    println("Package 8 worker $(job.id)")
+    println("Varying-IC sparsity study worker $(job.id)")
     println("  experiment: $(job.experiment_id)")
     println("  configuration/strength: $(job.configuration) / $(job.regularization_strength)")
     println("  replicate/seeds: $(job.replicate) / $(job.apprentice_seed), $(job.batch_seed)")
-    println("  updates/batches: $(job.updates) / $P8_BATCH_SIZE, validation $P8_VALIDATION_BATCH_SIZE")
+    println("  updates/batches: $(job.updates) / $VARYING_SPARSITY_BATCH_SIZE, validation $VARYING_SPARSITY_VALIDATION_BATCH_SIZE")
     println("  thresholds: $(join(options.thresholds, ", ")); importance: max input L1")
     println("  resume: $resume")
     println("  output: $directory")
@@ -307,7 +307,7 @@ function run_loaded_worker(options, directory, expert_path)
             minimum_active_groups = 1,
             threshold_importance_mode = :max_input_l1,
             threshold_minimum_active_groups = 1,
-            threshold_pareto_scope = :package8_thresholds,
+            threshold_pareto_scope = :varying_sparsity_thresholds,
             require_threshold_group_reduction = true,
             resume,
         )
@@ -354,7 +354,7 @@ if abspath(PROGRAM_FILE) == abspath(@__FILE__)
     options = parse_worker_arguments(ARGS)
     if !isnothing(options)
         directory, expert_path = configure_worker_environment!(options)
-        include(joinpath(P8_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
+        include(joinpath(VARYING_SPARSITY_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
         Base.invokelatest(run_loaded_worker, options, directory, expert_path)
     end
 end

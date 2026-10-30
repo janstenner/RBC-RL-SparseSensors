@@ -15,13 +15,13 @@ function usage(io::IO = stdout)
 
     Required:
       --n-runs N                     Number of seed pairs in this launch batch.
-      --look-for-imports true|false  Reuse complete Package-3 pairs or generate seeds.
+      --look-for-imports true|false  Reuse complete MAT-stability pairs or generate seeds.
       --jobs-file PATH               Write the worker manifest as tab-separated text.
 
     Options:
       --protocol all|fixed|varying   Default: all.
       --results-dir PATH             Default: MAT_IPPO_Comparison/results.
-      --package3-dir PATH            Default: MAT_Stability/results.
+      --mat-stability-dir PATH            Default: MAT_Stability/results.
       --preview                      Inspect without persisting plan/imports.
       --overwrite                    Re-run the most recent matching seed pairs.
       --help                         Show this message.
@@ -37,7 +37,7 @@ function parse_arguments(arguments)
         "jobs_file" => nothing,
         "protocol" => "all",
         "results_dir" => MATIPPOExperiment.DEFAULT_RESULTS_DIRECTORY,
-        "package3_dir" => joinpath(@__DIR__, "..", "MAT_Stability", "results"),
+        "mat_stability_dir" => joinpath(@__DIR__, "..", "MAT_Stability", "results"),
         "preview" => false,
         "overwrite" => false,
     )
@@ -78,7 +78,7 @@ function main(arguments = ARGS)
         look_for_imports = options["look_for_imports"],
         protocol = options["protocol"],
         results_directory = abspath(options["results_dir"]),
-        package3_directory = abspath(options["package3_dir"]),
+        mat_stability_directory = abspath(options["mat_stability_dir"]),
         preview = options["preview"],
         overwrite = options["overwrite"],
     )

@@ -4,14 +4,14 @@ const S = MaskedStudy
 
 function main(args = ARGS)
     defaults = Dict{String, Any}("results_dir" => S.DEFAULT_RESULTS, "comparison_dir" => S.DEFAULT_COMPARISON,
-        "package7_results" => joinpath(S.ROOT, "Package7/paper_snapshot/260830_173924"),
-        "package8_results" => joinpath(S.ROOT, "Package8/paper_snapshot/260830_231109"),
+        "fixed_sparsity_results" => joinpath(S.ROOT, "FixedIC_Ra1e4_Sparsity/paper_snapshot/260830_173924"),
+        "varying_sparsity_results" => joinpath(S.ROOT, "VaryingIC_Ra1e4_Sparsity/paper_snapshot/260830_231109"),
         "protocol" => "all", "grouping" => "all", "jobs_file" => nothing, "preview" => false)
     o = S.parse_options(args, defaults; flags = ["preview"])
     o["protocol"] in ("all", "fixed", "varying") || error("Invalid protocol")
     o["grouping"] in ("all", "gc", "sc") || error("Invalid grouping")
     m = S.build_manifest(; comparison = abspath(o["comparison_dir"]),
-        package7 = abspath(o["package7_results"]), package8 = abspath(o["package8_results"]))
+        fixed_sparsity = abspath(o["fixed_sparsity_results"]), varying_sparsity = abspath(o["varying_sparsity_results"]))
     path = S.manifest_path(o["results_dir"])
     if isfile(path)
         JLD2.load(path, "manifest").identity == m.identity || error("Frozen manifest changed; use a new --results-dir.")

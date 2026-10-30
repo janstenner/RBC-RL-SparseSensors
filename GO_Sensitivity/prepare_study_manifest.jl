@@ -1,8 +1,8 @@
 using Dates
 using JLD2
 
-include(joinpath(@__DIR__, "Package6Study.jl"))
-using .Package6Study
+include(joinpath(@__DIR__, "GOSensitivityStudy.jl"))
+using .GOSensitivityStudy
 
 function prepare_manifest_usage(io::IO = stdout)
     println(io, "Usage: julia --project=. prepare_study_manifest.jl --output PATH [--protocol all|fixed|varying] [--results-dir PATH]")
@@ -35,16 +35,16 @@ function prepare_study_manifest(options)
     all(short_path_components, jobs) || error("A training path contains a long component.")
     atomic_save(
         options.output;
-        schema_version = P6_SCHEMA_VERSION,
-        experiment = :package6_sc_go_sensitivity,
-        scientific_scope = :package6,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
+        experiment = :go_sensitivity_sc,
+        scientific_scope = :go_sensitivity,
         grouping = :separate_channels,
         group_channels = false,
-        master_seed = P6_MASTER_SEED,
-        seed_plan = [seed_plan(replicate) for replicate in P6_REPLICATES],
-        strengths = Dict(protocol => collect(values) for (protocol, values) in P6_STRENGTHS),
-        gr_strengths = copy(P6_GR_STRENGTH),
-        quality_thresholds = copy(P6_QUALITY_THRESHOLDS),
+        master_seed = GO_SENSITIVITY_MASTER_SEED,
+        seed_plan = [seed_plan(replicate) for replicate in GO_SENSITIVITY_REPLICATES],
+        strengths = Dict(protocol => collect(values) for (protocol, values) in GO_SENSITIVITY_STRENGTHS),
+        gr_strengths = copy(GO_SENSITIVITY_GR_STRENGTH),
+        quality_thresholds = copy(GO_SENSITIVITY_QUALITY_THRESHOLDS),
         jobs,
         analysis_jobs = analyses,
         results_root = options.results_root,

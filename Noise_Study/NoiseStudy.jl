@@ -122,8 +122,8 @@ symbolize(value::NamedTuple) = Dict{Symbol, Any}(pairs(value))
 function source_defaults(project_root::AbstractString)
     root = abspath(project_root)
     return (
-        package7_results = joinpath(root, "Package7", "paper_snapshot", "260830_173924"),
-        package8_results = joinpath(root, "Package8", "paper_snapshot", "260830_231109"),
+        fixed_sparsity_results = joinpath(root, "FixedIC_Ra1e4_Sparsity", "paper_snapshot", "260830_173924"),
+        varying_sparsity_results = joinpath(root, "VaryingIC_Ra1e4_Sparsity", "paper_snapshot", "260830_231109"),
         go_study_results = joinpath(root, "GO_Sensitivity", "paper_snapshot"),
         baseline_results = joinpath(root, "Baselines", "results"),
         distillation_root = joinpath(root, "Expert_Apprentice_Distillation"),
@@ -188,15 +188,24 @@ function selected_candidate_record(selection_path::AbstractString)
     )
 end
 
-function select_sparse_sc_candidate(protocol, package_results::AbstractString)
+# Experiment identifiers accepted for frozen sparsity-study selections. The shipped
+# paper snapshots were written before the studies were renamed and carry the
+# second (legacy) identifier.
+function sparsity_experiments(protocol)
+    return normalize_protocol(protocol) === :fixed ?
+        (:fixed_sparsity_regularizer_comparison, :package7_fixed_regularizer_comparison) :
+        (:varying_sparsity_regularizer_comparison, :package8_varying_regularizer_comparison)
+end
+
+function select_sparse_sc_candidate(protocol, sparsity_results::AbstractString)
     normalized_protocol = normalize_protocol(protocol)
-    expected_package = normalized_protocol === :fixed ? :package7_fixed_regularizer_comparison : :package8_varying_regularizer_comparison
+    expected_experiments = sparsity_experiments(normalized_protocol)
     records = NamedTuple[]
     for configuration in ("go-sc", "gr-sc", "group-lasso-sc", "growl-sc")
-        selection_path = joinpath(package_results, configuration, "analysis", "selected_test_candidate.jld2")
+        selection_path = joinpath(sparsity_results, configuration, "analysis", "selected_test_candidate.jld2")
         selected = selected_candidate_record(selection_path)
         selection = JLD2.load(selection_path)
-        Symbol(selection["experiment"]) === expected_package || error(
+        Symbol(selection["experiment"]) in expected_experiments || error(
             "Unexpected experiment in '$selection_path'.",
         )
         candidate = selected.candidate
@@ -241,12 +250,12 @@ function load_c_match_candidate(protocol, go_study_results::AbstractString)
     normalized_protocol = normalize_protocol(protocol)
     manifest_path = require_file(
         joinpath(go_study_results, string(normalized_protocol), "analysis", "candidate_manifest.jld2"),
-        "Package-6 candidate manifest",
+        "GO-sensitivity candidate manifest",
     )
     manifest = JLD2.load(manifest_path)
-    Bool(manifest["frozen_before_test"]) || error("Package-6 manifest was not frozen before test.")
-    Bool(manifest["selection_uses_test_data"]) && error("Package-6 manifest used test data.")
-    Symbol(manifest["protocol"]) === normalized_protocol || error("Package-6 protocol mismatch.")
+    Bool(manifest["frozen_before_test"]) || error("GO-sensitivity manifest was not frozen before test.")
+    Bool(manifest["selection_uses_test_data"]) && error("GO-sensitivity manifest used test data.")
+    Symbol(manifest["protocol"]) === normalized_protocol || error("GO-sensitivity protocol mismatch.")
     matches = filter(manifest["candidates"]) do raw
         candidate = symbolize(raw)
         Symbol(candidate[:selection_role]) === :C_match
@@ -384,9 +393,9 @@ function protocol_test_cases(protocol, baseline_results::AbstractString)
     )
 end
 
-function clean_source_for_sparse(protocol::Symbol, package_results::AbstractString, sparse)
+function clean_source_for_sparse(protocol::Symbol, sparsity_results::AbstractString, sparse)
     path = require_file(
-        joinpath(package_results, sparse.configuration, "analysis", "test", "test_results.jld2"),
+        joinpath(sparsity_results, sparse.configuration, "analysis", "test", "test_results.jld2"),
         "Sparse clean test result",
     )
     loaded = JLD2.load(path)
@@ -397,14 +406,14 @@ function clean_source_for_sparse(protocol::Symbol, package_results::AbstractStri
     return (
         path = abspath(path),
         sha256 = file_sha256(path),
-        format = :package78_test_result,
+        format = :sparsity_test_result,
         expert_identifier = string(loaded["expert_identifier"]),
     )
 end
 
 function clean_source_for_c_match(protocol::Symbol, go_study_results::AbstractString, candidate)
     cache_directory = joinpath(go_study_results, string(protocol), "analysis", "test", "cache")
-    isdir(cache_directory) || error("Package-6 clean cache is missing: $cache_directory")
+    isdir(cache_directory) || error("GO-sensitivity clean cache is missing: $cache_directory")
     matching_paths = String[]
     expert_identifiers = String[]
     for path in sort!(filter(name -> endswith(lowercase(name), ".jld2"), readdir(cache_directory; join = true)))
@@ -422,7 +431,7 @@ function clean_source_for_c_match(protocol::Symbol, go_study_results::AbstractSt
     return (
         paths = matching_paths,
         sha256 = file_sha256.(matching_paths),
-        format = :package6_episode_cache,
+        format = :go_sensitivity_episode_cache,
         expert_identifiers = sort!(unique(expert_identifiers)),
     )
 end
@@ -431,7 +440,7 @@ function controller_record(kind::Symbol, selected, clean_source)
     candidate = selected.candidate
     return (
         kind,
-        label = kind === :sparse ? "Sparse SC apprentice" : "Package-6 C_match apprentice",
+        label = kind === :sparse ? "Sparse SC apprentice" : "GO-sensitivity C_match apprentice",
         controller_id = string(candidate[:candidate_id]),
         checkpoint_path = selected.checkpoint_path,
         checkpoint_sha256 = selected.checkpoint_sha256,
@@ -456,22 +465,22 @@ function job_records(protocol)
         noise_level = level,
         level_tag = level_tag(level),
         replicate_count = level == 0 ? 0 : NOISE_REPLICATES,
-        id = "p10_$(normalized_protocol)_$(controller)_$(level_tag(level))",
+        id = "noise_$(normalized_protocol)_$(controller)_$(level_tag(level))",
     ) for level in NOISE_LEVELS for controller in NOISE_CONTROLLERS]
 end
 
 function build_protocol_manifest(
     output::AbstractString,
     protocol;
-    package_results::AbstractString,
+    sparsity_results::AbstractString,
     go_study_results::AbstractString,
     baseline_results::AbstractString,
     distillation_root::AbstractString,
     experiment_id::AbstractString,
 )
     normalized_protocol = normalize_protocol(protocol)
-    package_root = abspath(package_results)
-    sparse = select_sparse_sc_candidate(normalized_protocol, package_root)
+    sparsity_root = abspath(sparsity_results)
+    sparse = select_sparse_sc_candidate(normalized_protocol, sparsity_root)
     c_match = load_c_match_candidate(normalized_protocol, abspath(go_study_results))
     test_data = protocol_test_cases(normalized_protocol, abspath(baseline_results))
     scales = compute_channel_scales(normalized_protocol, abspath(distillation_root))
@@ -488,7 +497,7 @@ function build_protocol_manifest(
         sha256 = test_data.baseline_sha256,
         format = :revision_expert_baseline,
     )
-    sparse_clean = clean_source_for_sparse(normalized_protocol, package_root, sparse)
+    sparse_clean = clean_source_for_sparse(normalized_protocol, sparsity_root, sparse)
     c_match_clean = clean_source_for_c_match(normalized_protocol, abspath(go_study_results), c_match.candidate)
     sparse_clean.expert_identifier == expert_identifier || error("Sparse clean-result expert identity mismatch.")
     c_match_clean.expert_identifiers == [expert_identifier] || error("C_match clean-cache expert identity mismatch.")
@@ -517,7 +526,7 @@ function build_protocol_manifest(
     jobs = job_records(normalized_protocol)
     identity = (
         schema_version = NOISE_SCHEMA_VERSION,
-        experiment = :package10_sensor_noise,
+        experiment = :sensor_noise,
         experiment_id = String(experiment_id),
         protocol = normalized_protocol,
         expert_identifier,
@@ -548,7 +557,7 @@ function load_protocol_manifest(path::AbstractString)
     require_file(path, "Noise-study manifest")
     loaded = JLD2.load(path)
     Int(loaded["schema_version"]) == NOISE_SCHEMA_VERSION || error("Noise manifest schema mismatch.")
-    Symbol(loaded["experiment"]) === :package10_sensor_noise || error("Unexpected noise manifest experiment.")
+    Symbol(loaded["experiment"]) === :sensor_noise || error("Unexpected noise manifest experiment.")
     Bool(loaded["frozen_before_noise_test"]) || error("Noise manifest is not frozen.")
     Bool(loaded["selection_uses_noise_results"]) && error("Noise results influenced controller selection.")
     return symbolize(loaded)

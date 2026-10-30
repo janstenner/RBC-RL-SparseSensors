@@ -679,7 +679,7 @@ struct HardThresholdSpec
         id::Symbol,
         mode::Symbol,
         value::Real;
-        analysis_scope::Symbol = :later_packages,
+        analysis_scope::Symbol = :later_studies,
     )
         mode in (:absolute, :relative_to_max, :keep_groups) || throw(
             ArgumentError("Hard-threshold mode must be :absolute, :relative_to_max, or :keep_groups."),
@@ -808,7 +808,7 @@ function candidate_masks(
         pareto_scope = isnothing(threshold_pareto_scope) ? :native : threshold_pareto_scope,
         threshold_mode = :exact_zero,
         threshold_value = 0.0,
-        analysis_scope = :package6_native_sensitivity,
+        analysis_scope = :go_sensitivity_native,
         active_groups = importances .> 0.0,
     )]
     for spec in specifications

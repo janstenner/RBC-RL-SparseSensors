@@ -226,7 +226,7 @@ end
 
 function load_worker_result(path, experiment_id, protocol, controller, level)
     loaded = JLD2.load(path)
-    Symbol(loaded["experiment"]) === :package10_sensor_noise_worker || error(
+    Symbol(loaded["experiment"]) === :sensor_noise_worker || error(
         "Unexpected worker experiment in $path",
     )
     stored_experiment_id = string(loaded["experiment_id"])
@@ -361,7 +361,7 @@ end
 function write_markdown(output, rows, experiments)
     path = joinpath(output, "table_1_noise_robustness.md")
     open(path, "w") do io
-        println(io, "# Package-10 sensor-noise robustness")
+        println(io, "# sensor-noise sensor-noise robustness")
         println(io)
         headers = vcat(
             ["Protocol", "Candidate", "Configuration"],
@@ -674,7 +674,7 @@ function write_provenance(output, source_files, experiments)
     path = joinpath(output, "provenance.sha256")
     files = sort!(unique!(abspath.(source_files)))
     open(path, "w") do io
-        println(io, "# Package-10 paper figure and table input manifest")
+        println(io, "# sensor-noise paper figure and table input manifest")
         println(io, "# Script SHA-256: $(file_sha256(abspath(@__FILE__)))")
         println(io, "# Experiment IDs: $(join(("$(protocol)=$(identifier)" for (protocol, identifier) in sort!(collect(experiments); by = pair -> string(first(pair)))), ", "))")
         for file in files
@@ -718,7 +718,7 @@ function main(arguments = ARGS)
     metrics_path = atomic_save(
         joinpath(options.output, "paper_metrics.jld2");
         schema_version = NOISE_SCHEMA_VERSION,
-        experiment = :package10_sensor_noise_paper_table,
+        experiment = :sensor_noise_paper_table,
         experiment_ids = Dict(string(protocol) => identifier for (protocol, identifier) in options.experiments),
         noise_levels = collect(NOISE_LEVELS),
         rows,
@@ -731,7 +731,7 @@ function main(arguments = ARGS)
         provenance_path,
         created_at = string(Dates.now(Dates.UTC)),
     )
-    println("Package-10 paper figures and tables written to $(options.output)")
+    println("sensor-noise paper figures and tables written to $(options.output)")
     println("  CSV: $csv_path")
     println("  Markdown: $markdown_path")
     if !isnothing(figure_paths)

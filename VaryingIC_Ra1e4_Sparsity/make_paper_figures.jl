@@ -11,8 +11,8 @@ using Statistics
 PlotlyJS.PlotlyKaleido.kill_kaleido()
 PlotlyJS.PlotlyKaleido.start(plotlyjs = PlotlyJS._js_path, mathjax = false)
 
-include(joinpath(@__DIR__, "Package8Study.jl"))
-using .Package8Study
+include(joinpath(@__DIR__, "VaryingICRa1e4SparsityStudy.jl"))
+using .VaryingICRa1e4SparsityStudy
 
 const PAPER_METHODS = ("go", "gr", "group-lasso", "growl")
 const PAPER_GROUPINGS = ("gc", "sc")
@@ -47,10 +47,10 @@ const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
 function usage(io::IO = stdout)
     println(io, """
     Usage:
-      julia --startup-file=no --project=. Package8/make_paper_figures.jl \\
+      julia --startup-file=no --project=. VaryingIC_Ra1e4_Sparsity/make_paper_figures.jl \\
         [--experiment-id ID] [--results-dir PATH] [--output-dir PATH] [--check-only]
 
-    The script reads completed Package-8 analyses and existing Varying baseline
+    The script reads completed Varying-IC sparsity analyses and existing Varying baseline
     artifacts. Without --experiment-id it uses the newest direct directory in
     the results root. It never selects a new candidate or executes a rollout.
     """)
@@ -91,12 +91,12 @@ function parse_arguments(arguments)
 end
 
 function latest_experiment_id(results_root)
-    isdir(results_root) || error("Package-8 results directory is missing: $results_root")
+    isdir(results_root) || error("Varying-IC sparsity results directory is missing: $results_root")
     directories = [
         joinpath(results_root, name) for name in readdir(results_root)
         if isdir(joinpath(results_root, name)) &&
            !startswith(name, ".") &&
-           any(configuration -> isdir(joinpath(results_root, name, configuration)), P8_CONFIGURATION_NAMES) &&
+           any(configuration -> isdir(joinpath(results_root, name, configuration)), VARYING_SPARSITY_CONFIGURATION_NAMES) &&
            try
                normalize_experiment_id(name)
                true
@@ -104,13 +104,13 @@ function latest_experiment_id(results_root)
                false
            end
     ]
-    isempty(directories) && error("No Package-8 experiment directories found below $results_root.")
+    isempty(directories) && error("No Varying-IC sparsity experiment directories found below $results_root.")
     timestamped = filter(path -> occursin(r"^\d{6}_\d{6}$", basename(path)), directories)
     newest = isempty(timestamped) ?
         last(sort(directories; by = path -> (stat(path).mtime, basename(path)))) :
         last(sort(timestamped; by = basename))
     identifier = normalize_experiment_id(basename(newest))
-    println("No --experiment-id supplied; using newest Package-8 results directory: $identifier")
+    println("No --experiment-id supplied; using newest Varying-IC sparsity results directory: $identifier")
     return identifier
 end
 
@@ -142,7 +142,7 @@ function split_csv_line(line::AbstractString)
 end
 
 function read_csv(path)
-    isfile(path) || error("Required Package-8 CSV is missing: $path")
+    isfile(path) || error("Required Varying-IC sparsity CSV is missing: $path")
     lines = readlines(path)
     isempty(lines) && error("CSV is empty: $path")
     headers = Symbol.(split_csv_line(lines[1]))
@@ -195,7 +195,7 @@ function load_configuration(options, configuration)
     evaluations = read_csv(paths.evaluations)
     front = read_csv(paths.front)
     qualified_front = filter(
-        row -> float_value(row, :validation_matching) <= P8_QUALITY_THRESHOLD,
+        row -> float_value(row, :validation_matching) <= VARYING_SPARSITY_QUALITY_THRESHOLD,
         front,
     )
     selected = nothing
@@ -207,7 +207,7 @@ function load_configuration(options, configuration)
         selection = JLD2.load(paths.selection)
         Bool(selection["frozen_before_test"]) || error("$configuration selection was not frozen before test.")
         selection["selection_uses_test_data"] == false || error("$configuration selection used test data.")
-        Float64(selection["quality_threshold"]) == P8_QUALITY_THRESHOLD || error("$configuration quality threshold mismatch.")
+        Float64(selection["quality_threshold"]) == VARYING_SPARSITY_QUALITY_THRESHOLD || error("$configuration quality threshold mismatch.")
         selected = normalize_record(selection["candidate"])
         test = JLD2.load(paths.test)
         isempty(qualified_front) && error("$configuration stores a test candidate although its pooled front has no qualified point.")
@@ -224,7 +224,7 @@ function load_configuration(options, configuration)
         )
         string(test["candidate_id"]) == string(selected[:candidate_id]) || error("$configuration test candidate mismatch.")
         Int(test["active_inputs"]) == Int(selected[:active_inputs]) || error("$configuration active-input mismatch.")
-        Float64(test["validation_matching"]) <= P8_QUALITY_THRESHOLD || error("$configuration selected candidate exceeds quality threshold.")
+        Float64(test["validation_matching"]) <= VARYING_SPARSITY_QUALITY_THRESHOLD || error("$configuration selected candidate exceeds quality threshold.")
         episodes = test["episodes"]
         length(episodes) == 8 || error("$configuration test does not contain eight Varying episodes.")
         all(episode -> length(episode.state_nusselt) == 200, episodes) || error(
@@ -238,11 +238,11 @@ function load_configuration(options, configuration)
         count(mask) == Int(selected[:active_inputs]) || error("$configuration global mask/active-input count mismatch.")
         selected[:global_mask] = mask
     elseif !isempty(qualified_front)
-        error("$configuration has qualified pooled-front points but no frozen test result; rerun its Package-8 analyzer.")
+        error("$configuration has qualified pooled-front points but no frozen test result; rerun its Varying-IC sparsity analyzer.")
     end
     native = filter(row ->
         string_value(row, :threshold_id) == "native" &&
-        float_value(row, :validation_matching) <= P8_QUALITY_THRESHOLD,
+        float_value(row, :validation_matching) <= VARYING_SPARSITY_QUALITY_THRESHOLD,
         evaluations,
     )
     minimum_native_groups = isempty(native) ? missing : minimum(int_value(row, :active_groups) for row in native)
@@ -277,11 +277,11 @@ function validate_expert_identity(configurations, expert_baseline)
         string(data.test["expert_identifier"]) for data in values(configurations)
         if !isnothing(data.test)
     )
-    length(identifiers) <= 1 || error("Package-8 analyses use different experts.")
+    length(identifiers) <= 1 || error("Varying-IC sparsity analyses use different experts.")
     if !isempty(identifiers)
         expected = replace(only(identifiers), r"^sha256:" => "")
         string(expert_baseline.loaded["expert_sha256"]) == expected || error(
-            "Varying expert baseline does not match the Package-8 expert.",
+            "Varying expert baseline does not match the Varying-IC sparsity expert.",
         )
     end
     return nothing
@@ -309,7 +309,7 @@ function table_rows(configurations, expert, unactuated)
         mean_state_nusselt = mean(Float64(value) for episode in expert.episodes for value in episode.state_nusselt),
         minimum_native_active_groups_under_quality_threshold = missing,
     )]
-    for configuration in P8_CONFIGURATION_NAMES
+    for configuration in VARYING_SPARSITY_CONFIGURATION_NAMES
         data = configurations[configuration]
         if isnothing(data.selected)
             push!(rows, (;
@@ -383,13 +383,13 @@ function write_table(output, rows)
     end
     fmt(value, format) = value === missing ? "" : Printf.format(Printf.Format(format), value)
     open(markdown_path, "w") do io
-        println(io, "# Package 8 selected candidates\n")
+        println(io, "# Varying-IC sparsity study selected candidates\n")
         println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Minimum native groups under quality threshold |")
         println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows
             println(io, "| $(row.configuration) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
         end
-        println(io, "\nQuality means validation MSE <= $(P8_QUALITY_THRESHOLD). Test mean(state_Nu) is the mean over all stored per-step state_Nu values from the eight 200-step Varying test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
+        println(io, "\nQuality means validation MSE <= $(VARYING_SPARSITY_QUALITY_THRESHOLD). Test mean(state_Nu) is the mean over all stored per-step state_Nu values from the eight 200-step Varying test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
     end
     return (; csv_path, markdown_path)
 end
@@ -554,7 +554,7 @@ function threshold_styles(configurations)
         [float_value(row, :threshold_value) for row in data.evaluations]
         for data in values(configurations)
     ])))
-    is_default(value) = any(reference -> isapprox(value, reference; atol = 1e-12, rtol = 1e-10), P8_THRESHOLDS)
+    is_default(value) = any(reference -> isapprox(value, reference; atol = 1e-12, rtol = 1e-10), VARYING_SPARSITY_THRESHOLDS)
     zero = filter(iszero, thresholds)
     defaults = filter(value -> !iszero(value) && is_default(value), thresholds)
     extras = filter(value -> !iszero(value) && !is_default(value), thresholds)
@@ -601,7 +601,7 @@ function make_pareto_figure(configurations, output)
         for item in data.evaluations
         if isfinite(float_value(item, :validation_matching)) && float_value(item, :validation_matching) > 0
     ]
-    isempty(all_losses) && error("No finite Package-8 evaluation losses were found.")
+    isempty(all_losses) && error("No finite Varying-IC sparsity evaluation losses were found.")
     y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
     maxima = Dict(grouping => 1 for grouping in PAPER_GROUPINGS)
     shown_thresholds = Set{Float64}()
@@ -673,7 +673,7 @@ function make_pareto_figure(configurations, output)
         axis_suffix = index == 1 ? "" : string(index)
         push!(shapes, attr(
             type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
-            yref = "y$axis_suffix", y0 = P8_QUALITY_THRESHOLD, y1 = P8_QUALITY_THRESHOLD,
+            yref = "y$axis_suffix", y0 = VARYING_SPARSITY_QUALITY_THRESHOLD, y1 = VARYING_SPARSITY_QUALITY_THRESHOLD,
             line = attr(color = "#555555", width = 1.3, dash = "dash"),
         ))
     end
@@ -732,7 +732,7 @@ function make_varying_sc_pareto_figure(
         for method in methods
     )
     all_losses = [float_value(item, :validation_matching) for rows in values(eligible_rows) for item in rows]
-    isempty(all_losses) && error("No finite Package-8 SC evaluation losses were found.")
+    isempty(all_losses) && error("No finite Varying-IC sparsity SC evaluation losses were found.")
     y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
     max_groups = maximum(int_value(item, :active_groups) for rows in values(eligible_rows) for item in rows)
     shapes = Any[]
@@ -790,7 +790,7 @@ function make_varying_sc_pareto_figure(
         axis_suffix = index == 1 ? "" : string(index)
         push!(shapes, attr(
             type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
-            yref = "y$axis_suffix", y0 = P8_QUALITY_THRESHOLD, y1 = P8_QUALITY_THRESHOLD,
+            yref = "y$axis_suffix", y0 = VARYING_SPARSITY_QUALITY_THRESHOLD, y1 = VARYING_SPARSITY_QUALITY_THRESHOLD,
             line = attr(color = "#555555", width = 1.3, dash = "dash"),
         ))
     end
@@ -845,7 +845,7 @@ function write_provenance(output, configurations, expert, unactuated)
     sort!(unique!(files))
     path = joinpath(output, "provenance.sha256")
     open(path, "w") do io
-        println(io, "# Package-8 paper input manifest")
+        println(io, "# Varying-IC sparsity paper input manifest")
         println(io, "# Script SHA-256: $(file_sha256(abspath(@__FILE__)))")
         for file in files
             println(io, "$(file_sha256(file))  $(replace(relpath(file, output), '\\' => '/'))")
@@ -859,7 +859,7 @@ function main(arguments = ARGS)
     isnothing(options) && return nothing
     configurations = Dict(
         configuration => load_configuration(options, configuration)
-        for configuration in P8_CONFIGURATION_NAMES
+        for configuration in VARYING_SPARSITY_CONFIGURATION_NAMES
     )
     expert = load_varying_baseline(:expert)
     unactuated = load_varying_baseline(:unactuated)
@@ -867,7 +867,7 @@ function main(arguments = ARGS)
     rows = table_rows(configurations, expert, unactuated)
     if options.check_only
         qualified = count(data -> !isnothing(data.selected), values(configurations))
-        println("Package-8 paper inputs valid: $qualified/8 qualified selected candidates.")
+        println("Varying-IC sparsity paper inputs valid: $qualified/8 qualified selected candidates.")
         return (; options, configurations, expert, unactuated, rows)
     end
     mkpath(options.output)
@@ -894,16 +894,16 @@ function main(arguments = ARGS)
     provenance = write_provenance(options.output, configurations, expert, unactuated)
     atomic_save(
         joinpath(options.output, "paper_metrics.jld2");
-        schema_version = P8_SCHEMA_VERSION,
+        schema_version = VARYING_SPARSITY_SCHEMA_VERSION,
         experiment_id = options.experiment_id,
-        quality_threshold = P8_QUALITY_THRESHOLD,
+        quality_threshold = VARYING_SPARSITY_QUALITY_THRESHOLD,
         table_rows = rows,
         table,
         mask_paths,
         pareto_paths,
         provenance,
     )
-    println("Package-8 paper artifacts written to $(options.output)")
+    println("Varying-IC sparsity paper artifacts written to $(options.output)")
     return (; options, configurations, rows, table, mask_paths, pareto_paths, provenance)
 end
 

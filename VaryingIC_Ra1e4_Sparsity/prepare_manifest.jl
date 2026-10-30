@@ -1,7 +1,7 @@
 using Dates
 
-include(joinpath(@__DIR__, "Package7Study.jl"))
-using .Package7Study
+include(joinpath(@__DIR__, "VaryingICRa1e4SparsityStudy.jl"))
+using .VaryingICRa1e4SparsityStudy
 
 function parse_arguments(arguments)
     output = nothing
@@ -62,16 +62,19 @@ function prepare_manifest(options)
     variants = selected_variants(options.selection, options.strengths)
     jobs = study_jobs(options.experiment_id, options.selection, options.strengths)
     thresholds = resolved_thresholds(options.thresholds)
-    length(unique(job.id for job in jobs)) == length(jobs) || error("Duplicate Package-7 run IDs.")
-    length(unique(job.relative_path for job in jobs)) == length(jobs) || error("Duplicate Package-7 run paths.")
+    length(unique(job.id for job in jobs)) == length(jobs) || error("Duplicate Varying-IC sparsity run IDs.")
+    length(unique(job.relative_path for job in jobs)) == length(jobs) || error("Duplicate Varying-IC sparsity run paths.")
     atomic_save(
         options.output;
-        schema_version = P7_SCHEMA_VERSION,
-        experiment = :package7_fixed_regularizer_comparison,
+        schema_version = VARYING_SPARSITY_SCHEMA_VERSION,
+        experiment = :varying_sparsity_regularizer_comparison,
         experiment_id = options.experiment_id,
-        protocol = :fixed,
-        master_seed = P7_MASTER_SEED,
-        seed_plan = [seed_plan(replicate) for replicate in P7_REPLICATES],
+        protocol = :varying,
+        training_data_split = :train,
+        validation_data_split = :validation,
+        terminal_data_split = :test,
+        master_seed = VARYING_SPARSITY_MASTER_SEED,
+        seed_plan = [seed_plan(replicate) for replicate in VARYING_SPARSITY_REPLICATES],
         threshold_values = thresholds,
         threshold_mode = :absolute,
         threshold_importance_mode = :max_input_l1,
@@ -94,7 +97,7 @@ if abspath(PROGRAM_FILE) == abspath(@__FILE__)
             end
         else
             variants, jobs = prepare_manifest(options)
-            println("Wrote $(length(jobs)) training jobs for $(length(variants)) Package-7 variant(s).")
+            println("Wrote $(length(jobs)) training jobs for $(length(variants)) Varying-IC sparsity variant(s).")
         end
     end
 end

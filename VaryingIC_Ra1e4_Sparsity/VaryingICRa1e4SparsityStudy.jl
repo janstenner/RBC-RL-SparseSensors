@@ -1,4 +1,4 @@
-module Package7Study
+module VaryingICRa1e4SparsityStudy
 
 using Dates
 using JLD2
@@ -6,30 +6,30 @@ using Printf
 using SHA
 using StableRNGs
 
-export P7_SCHEMA_VERSION, P7_MASTER_SEED, P7_UPDATES, P7_BATCH_SIZE,
-       P7_VALIDATION_BATCH_SIZE, P7_LEARNING_RATE, P7_EVALUATION_INTERVAL,
-       P7_RESUME_INTERVAL, P7_GARBAGE_COLLECTION_INTERVAL, P7_REPLICATES,
-       P7_THRESHOLDS, P7_QUALITY_THRESHOLD, P7_CONFIGURATION_NAMES, P7_STRENGTH_GRIDS,
+export VARYING_SPARSITY_SCHEMA_VERSION, VARYING_SPARSITY_MASTER_SEED, VARYING_SPARSITY_UPDATES, VARYING_SPARSITY_BATCH_SIZE,
+       VARYING_SPARSITY_VALIDATION_BATCH_SIZE, VARYING_SPARSITY_LEARNING_RATE, VARYING_SPARSITY_EVALUATION_INTERVAL,
+       VARYING_SPARSITY_RESUME_INTERVAL, VARYING_SPARSITY_GARBAGE_COLLECTION_INTERVAL, VARYING_SPARSITY_REPLICATES,
+       VARYING_SPARSITY_THRESHOLDS, VARYING_SPARSITY_QUALITY_THRESHOLD, VARYING_SPARSITY_CONFIGURATION_NAMES, VARYING_SPARSITY_STRENGTH_GRIDS,
        configuration, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
        selected_variants, resolved_thresholds, study_jobs, job_for, run_directory, analysis_directory,
        status_path, analysis_status_path, atomic_save, load_status, write_status!,
        canonical_string, fingerprint, strength_tag, expected_evaluation_updates
 
-const P7_SCHEMA_VERSION = 2
-const P7_MASTER_SEED = 20_260_850
-const P7_UPDATES = 70_000
-const P7_BATCH_SIZE = 50
-const P7_VALIDATION_BATCH_SIZE = 200
-const P7_LEARNING_RATE = 2e-4
-const P7_EVALUATION_INTERVAL = 25
-const P7_RESUME_INTERVAL = 100
-const P7_GARBAGE_COLLECTION_INTERVAL = 5
-const P7_REPLICATES = 1:3
-const P7_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
-const P7_QUALITY_THRESHOLD = 1e-2
+const VARYING_SPARSITY_SCHEMA_VERSION = 2
+const VARYING_SPARSITY_MASTER_SEED = 20_260_851
+const VARYING_SPARSITY_UPDATES = 100_000
+const VARYING_SPARSITY_BATCH_SIZE = 100
+const VARYING_SPARSITY_VALIDATION_BATCH_SIZE = 512
+const VARYING_SPARSITY_LEARNING_RATE = 2e-4
+const VARYING_SPARSITY_EVALUATION_INTERVAL = 25
+const VARYING_SPARSITY_RESUME_INTERVAL = 100
+const VARYING_SPARSITY_GARBAGE_COLLECTION_INTERVAL = 5
+const VARYING_SPARSITY_REPLICATES = 1:3
+const VARYING_SPARSITY_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
+const VARYING_SPARSITY_QUALITY_THRESHOLD = 3e-2
 
 function resolved_thresholds(values = Float64[])
-    isempty(values) && return collect(P7_THRESHOLDS)
+    isempty(values) && return collect(VARYING_SPARSITY_THRESHOLDS)
     custom = sort!(unique(Float64.(values)))
     all(value -> isfinite(value) && value > 0, custom) || throw(ArgumentError(
         "Custom mask thresholds must be finite and positive; native threshold 0.0 is automatic.",
@@ -37,23 +37,23 @@ function resolved_thresholds(values = Float64[])
     return vcat(0.0, custom)
 end
 
-const P7_CONFIGURATION_NAMES = (
+const VARYING_SPARSITY_CONFIGURATION_NAMES = (
     "go-gc", "go-sc", "gr-gc", "gr-sc",
     "group-lasso-gc", "group-lasso-sc", "growl-gc", "growl-sc",
 )
 
-const P7_STRENGTH_GRIDS = Dict(
-    "go-gc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
-    "go-sc" => (0.016, 0.04, 0.1),                     # inherited default: 0.09
-    "gr-gc" => (0.000024, 0.00006, 0.00015),           # inherited default: 0.00004
-    "gr-sc" => (0.000048, 0.00012, 0.0003),            # inherited default: 0.00004
-    "group-lasso-gc" => (0.000032, 0.00008, 0.0002),   # inherited default: 0.0001
-    "group-lasso-sc" => (0.000064, 0.00016, 0.0004),   # inherited default: 0.0001
-    "growl-gc" => (0.000048, 0.00012, 0.0003),         # inherited default: 0.00006
-    "growl-sc" => (0.000096, 0.00024, 0.0006),         # inherited default: 0.00006
+const VARYING_SPARSITY_STRENGTH_GRIDS = Dict(
+    "go-gc" => (0.008, 0.02, 0.05),                    # inherited Varying default: 0.025
+    "go-sc" => (0.016, 0.04, 0.1),                     # inherited Varying default: 0.025
+    "gr-gc" => (0.000024, 0.00006, 0.00015),           # inherited Varying default: 0.0001
+    "gr-sc" => (0.000048, 0.00012, 0.0003),            # inherited Varying default: 0.0001
+    "group-lasso-gc" => (0.000032, 0.00008, 0.0002),   # inherited Varying default: 0.00012
+    "group-lasso-sc" => (0.000064, 0.00016, 0.0004),   # inherited Varying default: 0.00012
+    "growl-gc" => (0.000048, 0.00012, 0.0003),         # inherited Varying default: 0.0004
+    "growl-sc" => (0.000096, 0.00024, 0.0006),         # inherited Varying default: 0.0004
 )
 
-const P7_CONFIGURATIONS = Dict(
+const VARYING_SPARSITY_CONFIGURATIONS = Dict(
     "go-gc" => (method = :go, grouping = :grouped_channels, group_channels = true),
     "go-sc" => (method = :go, grouping = :separate_channels, group_channels = false),
     "gr-gc" => (method = :gr, grouping = :grouped_channels, group_channels = true),
@@ -66,13 +66,13 @@ const P7_CONFIGURATIONS = Dict(
 
 function normalize_configuration(value)::String
     name = lowercase(strip(string(value)))
-    haskey(P7_CONFIGURATIONS, name) || throw(ArgumentError(
-        "Unknown Package-7 configuration '$value'. Available: $(join(P7_CONFIGURATION_NAMES, ", ")).",
+    haskey(VARYING_SPARSITY_CONFIGURATIONS, name) || throw(ArgumentError(
+        "Unknown Varying-IC sparsity configuration '$value'. Available: $(join(VARYING_SPARSITY_CONFIGURATION_NAMES, ", ")).",
     ))
     return name
 end
 
-configuration(value) = P7_CONFIGURATIONS[normalize_configuration(value)]
+configuration(value) = VARYING_SPARSITY_CONFIGURATIONS[normalize_configuration(value)]
 
 function normalize_experiment_id(value)::String
     identifier = strip(string(value))
@@ -83,8 +83,8 @@ function normalize_experiment_id(value)::String
 end
 
 function seed_plan(replicate::Integer)
-    replicate in P7_REPLICATES || throw(ArgumentError("Replicate must be in 1:3."))
-    planner = StableRNG(P7_MASTER_SEED)
+    replicate in VARYING_SPARSITY_REPLICATES || throw(ArgumentError("Replicate must be in 1:3."))
+    planner = StableRNG(VARYING_SPARSITY_MASTER_SEED)
     apprentice_seed = 0
     batch_seed = 0
     for _ in 1:replicate
@@ -126,15 +126,15 @@ end
 function selected_variants(selection = "all", strengths = Float64[])
     if lowercase(string(selection)) == "all"
         isempty(strengths) || throw(ArgumentError("Explicit strengths require exactly one --config."))
-        return [(name = name, strength = strength) for name in P7_CONFIGURATION_NAMES for strength in P7_STRENGTH_GRIDS[name]]
+        return [(name = name, strength = strength) for name in VARYING_SPARSITY_CONFIGURATION_NAMES for strength in VARYING_SPARSITY_STRENGTH_GRIDS[name]]
     end
     name = normalize_configuration(selection)
-    values = isempty(strengths) ? collect(P7_STRENGTH_GRIDS[name]) : unique(Float64.(strengths))
+    values = isempty(strengths) ? collect(VARYING_SPARSITY_STRENGTH_GRIDS[name]) : unique(Float64.(strengths))
     all(value -> isfinite(value) && value > 0, values) || throw(ArgumentError("Strengths must be finite and positive."))
     return [(name, strength = value) for value in values]
 end
 
-function job_for(experiment_id, configuration_name, strength::Real, replicate::Integer; updates::Integer = P7_UPDATES)
+function job_for(experiment_id, configuration_name, strength::Real, replicate::Integer; updates::Integer = VARYING_SPARSITY_UPDATES)
     experiment = normalize_experiment_id(experiment_id)
     name = normalize_configuration(configuration_name)
     config = configuration(name)
@@ -152,16 +152,16 @@ function job_for(experiment_id, configuration_name, strength::Real, replicate::I
         seeds...,
         pairing_hash = seed_plan_hash(replicate),
         updates = Int(updates),
-        id = "p7_$(experiment)_$(replace(name, "-" => "_"))_$(tag)_$(replicate_tag)",
+        id = "vs_$(experiment)_$(replace(name, "-" => "_"))_$(tag)_$(replicate_tag)",
         relative_path,
     )
 end
 
-function study_jobs(experiment_id, selection = "all", strengths = Float64[]; updates::Integer = P7_UPDATES)
+function study_jobs(experiment_id, selection = "all", strengths = Float64[]; updates::Integer = VARYING_SPARSITY_UPDATES)
     return [
         job_for(experiment_id, variant.name, variant.strength, replicate; updates)
         for variant in selected_variants(selection, strengths)
-        for replicate in P7_REPLICATES
+        for replicate in VARYING_SPARSITY_REPLICATES
     ]
 end
 
@@ -194,9 +194,9 @@ function load_status(path::AbstractString)
 end
 
 function write_status!(path::AbstractString; entries...)
-    return atomic_save(path; schema_version = P7_SCHEMA_VERSION, entries...)
+    return atomic_save(path; schema_version = VARYING_SPARSITY_SCHEMA_VERSION, entries...)
 end
 
-expected_evaluation_updates(updates::Integer = P7_UPDATES) = collect(0:P7_EVALUATION_INTERVAL:Int(updates))
+expected_evaluation_updates(updates::Integer = VARYING_SPARSITY_UPDATES) = collect(0:VARYING_SPARSITY_EVALUATION_INTERVAL:Int(updates))
 
 end

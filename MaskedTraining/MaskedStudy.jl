@@ -2,7 +2,7 @@ module MaskedStudy
 
 using JLD2, Dates
 include(joinpath(@__DIR__, "..", "Noise_Study", "NoiseStudy.jl"))
-using .NoiseStudy: fingerprint, file_sha256, atomic_save, selected_candidate_record
+using .NoiseStudy: fingerprint, file_sha256, atomic_save, selected_candidate_record, sparsity_experiments
 
 const ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_RESULTS = joinpath(@__DIR__, "results")
@@ -12,12 +12,12 @@ const BUDGETS = Dict(:fixed => 2000, :varying => 4000)
 function select_candidate(protocol, grouping, root)
     protocol in (:fixed, :varying) || error("Invalid protocol")
     grouping in (:gc, :sc) || error("Invalid grouping")
-    expected = protocol === :fixed ? :package7_fixed_regularizer_comparison : :package8_varying_regularizer_comparison
+    expected = sparsity_experiments(protocol)
     records = map(("go", "gr", "group-lasso", "growl")) do method
         configuration = "$method-$grouping"
         path = joinpath(root, configuration, "analysis", "selected_test_candidate.jld2")
         record = selected_candidate_record(path)
-        Symbol(JLD2.load(path, "experiment")) === expected || error("Wrong source experiment: $path")
+        Symbol(JLD2.load(path, "experiment")) in expected || error("Wrong source experiment: $path")
         string(record.candidate[:configuration]) == configuration || error("Configuration mismatch")
         record
     end
@@ -56,8 +56,8 @@ function baseline_record(comparison, entry, protocol)
 end
 
 function build_manifest(; comparison = DEFAULT_COMPARISON,
-    package7 = joinpath(ROOT, "Package7", "paper_snapshot", "260830_173924"),
-    package8 = joinpath(ROOT, "Package8", "paper_snapshot", "260830_231109"))
+    fixed_sparsity = joinpath(ROOT, "FixedIC_Ra1e4_Sparsity", "paper_snapshot", "260830_173924"),
+    varying_sparsity = joinpath(ROOT, "VaryingIC_Ra1e4_Sparsity", "paper_snapshot", "260830_231109"))
     source_plan = joinpath(comparison, "run_plan.jld2")
     plan = JLD2.load(source_plan, "plan")
     plan["schema_version"] == 1 || error("Unsupported comparison plan")
@@ -66,7 +66,7 @@ function build_manifest(; comparison = DEFAULT_COMPARISON,
     length(unique(e.run_id for e in entries)) == 10 || error("Duplicate run IDs")
     length(unique((e.run_seed, e.ic_seed) for e in entries)) == 10 || error("Duplicate seed pairs")
     all(length(e.varying_trace) == 4000 && all(c.split === :train for c in e.varying_trace) for e in entries) || error("Invalid training IC schedules")
-    candidates = [select_candidate(p, g, p === :fixed ? package7 : package8) for p in (:fixed, :varying) for g in (:gc, :sc)]
+    candidates = [select_candidate(p, g, p === :fixed ? fixed_sparsity : varying_sparsity) for p in (:fixed, :varying) for g in (:gc, :sc)]
     baselines = Dict((e.run_id, p) => baseline_record(comparison, e, p) for e in entries for p in (:fixed, :varying))
     sources = [joinpath(@__DIR__, name) for name in ("MaskedStudy.jl", "MaskedTraining.jl", "run_worker.jl")]
     append!(sources, [joinpath(ROOT, "Run_Files", "$(p)IC_MAT.jl") for p in ("Fixed", "Varying")])
@@ -78,7 +78,7 @@ function build_manifest(; comparison = DEFAULT_COMPARISON,
         for name in ("agent_mat.jl", "agent.jl", "env.jl", "hook.jl"))
     payload = (; schema_version = 1, rayleigh = 1e4, entries, candidates, baselines,
         comparison_plan_sha256 = file_sha256(source_plan), source_hashes, rl_sources,
-        selection_rule = "minimum active inputs, then minimum validation MSE; frozen Package-7/8 candidates only")
+        selection_rule = "minimum active inputs, then minimum validation MSE; frozen sparsity-study candidates only")
     # Arrays (including masks) are explicitly flattened in the identity payload.
     return (; payload..., identity = fingerprint(payload))
 end

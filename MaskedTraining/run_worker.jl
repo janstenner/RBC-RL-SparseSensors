@@ -5,7 +5,7 @@ using JLD2, Dates, Flux, Statistics, SHA
 const S = MaskedStudy
 const M = MATIPPOExperiment
 
-# Package-3 imports use the same arrays but prefix their hash with the number
+# MAT-stability imports use the same arrays but prefix their hash with the number
 # of parameter arrays. Reproduce that serialization without loading an agent.
 function legacy_parameter_hash(agent)
     parameters = Flux.trainables((agent.policy.encoder, agent.policy.decoder))
@@ -21,7 +21,7 @@ end
 
 function run_worker(; results, protocol, grouping, run_id, episodes = nothing)
     m = JLD2.load(S.manifest_path(results), "manifest")
-    m.rayleigh == 1e4 || error("Package 11 requires Ra=1e4")
+    m.rayleigh == 1e4 || error("masked-training study requires Ra=1e4")
     c = only(filter(c -> c.protocol === protocol && c.grouping === grouping, m.candidates))
     e = only(filter(e -> e.run_id == run_id, m.entries))
     budget = something(episodes, S.BUDGETS[protocol])
@@ -64,7 +64,7 @@ function run_worker(; results, protocol, grouping, run_id, episodes = nothing)
             M.save_training_result(temporary, e, protocol, :mat, budget, elapsed, started, trace, initial_hash)
             JLD2.jldopen(temporary, "a+") do f
                 f["manifest_identity"] = m.identity
-                f["experiment"] = :package11_direct_masked_rl
+                f["experiment"] = :direct_masked_rl
                 f["candidate"] = c
                 f["dense_reference"] = baseline
                 f["control_steps"] = steps

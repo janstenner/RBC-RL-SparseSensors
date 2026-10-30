@@ -1,4 +1,4 @@
-module Package8Study
+module FixedICRa1e4SparsityStudy
 
 using Dates
 using JLD2
@@ -6,30 +6,30 @@ using Printf
 using SHA
 using StableRNGs
 
-export P8_SCHEMA_VERSION, P8_MASTER_SEED, P8_UPDATES, P8_BATCH_SIZE,
-       P8_VALIDATION_BATCH_SIZE, P8_LEARNING_RATE, P8_EVALUATION_INTERVAL,
-       P8_RESUME_INTERVAL, P8_GARBAGE_COLLECTION_INTERVAL, P8_REPLICATES,
-       P8_THRESHOLDS, P8_QUALITY_THRESHOLD, P8_CONFIGURATION_NAMES, P8_STRENGTH_GRIDS,
+export FIXED_SPARSITY_SCHEMA_VERSION, FIXED_SPARSITY_MASTER_SEED, FIXED_SPARSITY_UPDATES, FIXED_SPARSITY_BATCH_SIZE,
+       FIXED_SPARSITY_VALIDATION_BATCH_SIZE, FIXED_SPARSITY_LEARNING_RATE, FIXED_SPARSITY_EVALUATION_INTERVAL,
+       FIXED_SPARSITY_RESUME_INTERVAL, FIXED_SPARSITY_GARBAGE_COLLECTION_INTERVAL, FIXED_SPARSITY_REPLICATES,
+       FIXED_SPARSITY_THRESHOLDS, FIXED_SPARSITY_QUALITY_THRESHOLD, FIXED_SPARSITY_CONFIGURATION_NAMES, FIXED_SPARSITY_STRENGTH_GRIDS,
        configuration, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
        selected_variants, resolved_thresholds, study_jobs, job_for, run_directory, analysis_directory,
        status_path, analysis_status_path, atomic_save, load_status, write_status!,
        canonical_string, fingerprint, strength_tag, expected_evaluation_updates
 
-const P8_SCHEMA_VERSION = 2
-const P8_MASTER_SEED = 20_260_851
-const P8_UPDATES = 100_000
-const P8_BATCH_SIZE = 100
-const P8_VALIDATION_BATCH_SIZE = 512
-const P8_LEARNING_RATE = 2e-4
-const P8_EVALUATION_INTERVAL = 25
-const P8_RESUME_INTERVAL = 100
-const P8_GARBAGE_COLLECTION_INTERVAL = 5
-const P8_REPLICATES = 1:3
-const P8_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
-const P8_QUALITY_THRESHOLD = 3e-2
+const FIXED_SPARSITY_SCHEMA_VERSION = 2
+const FIXED_SPARSITY_MASTER_SEED = 20_260_850
+const FIXED_SPARSITY_UPDATES = 70_000
+const FIXED_SPARSITY_BATCH_SIZE = 50
+const FIXED_SPARSITY_VALIDATION_BATCH_SIZE = 200
+const FIXED_SPARSITY_LEARNING_RATE = 2e-4
+const FIXED_SPARSITY_EVALUATION_INTERVAL = 25
+const FIXED_SPARSITY_RESUME_INTERVAL = 100
+const FIXED_SPARSITY_GARBAGE_COLLECTION_INTERVAL = 5
+const FIXED_SPARSITY_REPLICATES = 1:3
+const FIXED_SPARSITY_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
+const FIXED_SPARSITY_QUALITY_THRESHOLD = 1e-2
 
 function resolved_thresholds(values = Float64[])
-    isempty(values) && return collect(P8_THRESHOLDS)
+    isempty(values) && return collect(FIXED_SPARSITY_THRESHOLDS)
     custom = sort!(unique(Float64.(values)))
     all(value -> isfinite(value) && value > 0, custom) || throw(ArgumentError(
         "Custom mask thresholds must be finite and positive; native threshold 0.0 is automatic.",
@@ -37,23 +37,23 @@ function resolved_thresholds(values = Float64[])
     return vcat(0.0, custom)
 end
 
-const P8_CONFIGURATION_NAMES = (
+const FIXED_SPARSITY_CONFIGURATION_NAMES = (
     "go-gc", "go-sc", "gr-gc", "gr-sc",
     "group-lasso-gc", "group-lasso-sc", "growl-gc", "growl-sc",
 )
 
-const P8_STRENGTH_GRIDS = Dict(
-    "go-gc" => (0.008, 0.02, 0.05),                    # inherited Varying default: 0.025
-    "go-sc" => (0.016, 0.04, 0.1),                     # inherited Varying default: 0.025
-    "gr-gc" => (0.000024, 0.00006, 0.00015),           # inherited Varying default: 0.0001
-    "gr-sc" => (0.000048, 0.00012, 0.0003),            # inherited Varying default: 0.0001
-    "group-lasso-gc" => (0.000032, 0.00008, 0.0002),   # inherited Varying default: 0.00012
-    "group-lasso-sc" => (0.000064, 0.00016, 0.0004),   # inherited Varying default: 0.00012
-    "growl-gc" => (0.000048, 0.00012, 0.0003),         # inherited Varying default: 0.0004
-    "growl-sc" => (0.000096, 0.00024, 0.0006),         # inherited Varying default: 0.0004
+const FIXED_SPARSITY_STRENGTH_GRIDS = Dict(
+    "go-gc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
+    "go-sc" => (0.016, 0.04, 0.1),                     # inherited default: 0.09
+    "gr-gc" => (0.000024, 0.00006, 0.00015),           # inherited default: 0.00004
+    "gr-sc" => (0.000048, 0.00012, 0.0003),            # inherited default: 0.00004
+    "group-lasso-gc" => (0.000032, 0.00008, 0.0002),   # inherited default: 0.0001
+    "group-lasso-sc" => (0.000064, 0.00016, 0.0004),   # inherited default: 0.0001
+    "growl-gc" => (0.000048, 0.00012, 0.0003),         # inherited default: 0.00006
+    "growl-sc" => (0.000096, 0.00024, 0.0006),         # inherited default: 0.00006
 )
 
-const P8_CONFIGURATIONS = Dict(
+const FIXED_SPARSITY_CONFIGURATIONS = Dict(
     "go-gc" => (method = :go, grouping = :grouped_channels, group_channels = true),
     "go-sc" => (method = :go, grouping = :separate_channels, group_channels = false),
     "gr-gc" => (method = :gr, grouping = :grouped_channels, group_channels = true),
@@ -66,13 +66,13 @@ const P8_CONFIGURATIONS = Dict(
 
 function normalize_configuration(value)::String
     name = lowercase(strip(string(value)))
-    haskey(P8_CONFIGURATIONS, name) || throw(ArgumentError(
-        "Unknown Package-8 configuration '$value'. Available: $(join(P8_CONFIGURATION_NAMES, ", ")).",
+    haskey(FIXED_SPARSITY_CONFIGURATIONS, name) || throw(ArgumentError(
+        "Unknown Fixed-IC sparsity configuration '$value'. Available: $(join(FIXED_SPARSITY_CONFIGURATION_NAMES, ", ")).",
     ))
     return name
 end
 
-configuration(value) = P8_CONFIGURATIONS[normalize_configuration(value)]
+configuration(value) = FIXED_SPARSITY_CONFIGURATIONS[normalize_configuration(value)]
 
 function normalize_experiment_id(value)::String
     identifier = strip(string(value))
@@ -83,8 +83,8 @@ function normalize_experiment_id(value)::String
 end
 
 function seed_plan(replicate::Integer)
-    replicate in P8_REPLICATES || throw(ArgumentError("Replicate must be in 1:3."))
-    planner = StableRNG(P8_MASTER_SEED)
+    replicate in FIXED_SPARSITY_REPLICATES || throw(ArgumentError("Replicate must be in 1:3."))
+    planner = StableRNG(FIXED_SPARSITY_MASTER_SEED)
     apprentice_seed = 0
     batch_seed = 0
     for _ in 1:replicate
@@ -126,15 +126,15 @@ end
 function selected_variants(selection = "all", strengths = Float64[])
     if lowercase(string(selection)) == "all"
         isempty(strengths) || throw(ArgumentError("Explicit strengths require exactly one --config."))
-        return [(name = name, strength = strength) for name in P8_CONFIGURATION_NAMES for strength in P8_STRENGTH_GRIDS[name]]
+        return [(name = name, strength = strength) for name in FIXED_SPARSITY_CONFIGURATION_NAMES for strength in FIXED_SPARSITY_STRENGTH_GRIDS[name]]
     end
     name = normalize_configuration(selection)
-    values = isempty(strengths) ? collect(P8_STRENGTH_GRIDS[name]) : unique(Float64.(strengths))
+    values = isempty(strengths) ? collect(FIXED_SPARSITY_STRENGTH_GRIDS[name]) : unique(Float64.(strengths))
     all(value -> isfinite(value) && value > 0, values) || throw(ArgumentError("Strengths must be finite and positive."))
     return [(name, strength = value) for value in values]
 end
 
-function job_for(experiment_id, configuration_name, strength::Real, replicate::Integer; updates::Integer = P8_UPDATES)
+function job_for(experiment_id, configuration_name, strength::Real, replicate::Integer; updates::Integer = FIXED_SPARSITY_UPDATES)
     experiment = normalize_experiment_id(experiment_id)
     name = normalize_configuration(configuration_name)
     config = configuration(name)
@@ -152,16 +152,16 @@ function job_for(experiment_id, configuration_name, strength::Real, replicate::I
         seeds...,
         pairing_hash = seed_plan_hash(replicate),
         updates = Int(updates),
-        id = "p8_$(experiment)_$(replace(name, "-" => "_"))_$(tag)_$(replicate_tag)",
+        id = "fs_$(experiment)_$(replace(name, "-" => "_"))_$(tag)_$(replicate_tag)",
         relative_path,
     )
 end
 
-function study_jobs(experiment_id, selection = "all", strengths = Float64[]; updates::Integer = P8_UPDATES)
+function study_jobs(experiment_id, selection = "all", strengths = Float64[]; updates::Integer = FIXED_SPARSITY_UPDATES)
     return [
         job_for(experiment_id, variant.name, variant.strength, replicate; updates)
         for variant in selected_variants(selection, strengths)
-        for replicate in P8_REPLICATES
+        for replicate in FIXED_SPARSITY_REPLICATES
     ]
 end
 
@@ -194,9 +194,9 @@ function load_status(path::AbstractString)
 end
 
 function write_status!(path::AbstractString; entries...)
-    return atomic_save(path; schema_version = P8_SCHEMA_VERSION, entries...)
+    return atomic_save(path; schema_version = FIXED_SPARSITY_SCHEMA_VERSION, entries...)
 end
 
-expected_evaluation_updates(updates::Integer = P8_UPDATES) = collect(0:P8_EVALUATION_INTERVAL:Int(updates))
+expected_evaluation_updates(updates::Integer = FIXED_SPARSITY_UPDATES) = collect(0:FIXED_SPARSITY_EVALUATION_INTERVAL:Int(updates))
 
 end

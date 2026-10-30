@@ -12,7 +12,7 @@ function usage()
       --protocol fixed|varying
       --experiment-id ID
       --output PATH
-      --package-results PATH
+      --sparsity-results PATH
       --go-study-results PATH
       --baseline-results PATH
       --distillation-root PATH
@@ -31,7 +31,7 @@ function parse_options(arguments)
         "protocol" => nothing,
         "experiment_id" => nothing,
         "output" => nothing,
-        "package_results" => nothing,
+        "sparsity_results" => nothing,
         "go_study_results" => defaults.go_study_results,
         "baseline_results" => defaults.baseline_results,
         "distillation_root" => defaults.distillation_root,
@@ -57,15 +57,15 @@ function parse_options(arguments)
     end
     isnothing(values["protocol"]) && error("--protocol is required.")
     protocol = normalize_protocol(values["protocol"])
-    package_default = protocol === :fixed ? defaults.package7_results : defaults.package8_results
-    package_results = abspath(isnothing(values["package_results"]) ? package_default : string(values["package_results"]))
+    sparsity_default = protocol === :fixed ? defaults.fixed_sparsity_results : defaults.varying_sparsity_results
+    sparsity_results = abspath(isnothing(values["sparsity_results"]) ? sparsity_default : string(values["sparsity_results"]))
     if Bool(values["print_jobs"])
         return (;
             protocol,
             print_jobs = true,
             experiment_id = isnothing(values["experiment_id"]) ? "preview" : string(values["experiment_id"]),
             output = nothing,
-            package_results,
+            sparsity_results,
             go_study_results = abspath(string(values["go_study_results"])),
             baseline_results = abspath(string(values["baseline_results"])),
             distillation_root = abspath(string(values["distillation_root"])),
@@ -80,7 +80,7 @@ function parse_options(arguments)
         print_jobs = false,
         experiment_id,
         output = abspath(string(values["output"])),
-        package_results,
+        sparsity_results,
         go_study_results = abspath(string(values["go_study_results"])),
         baseline_results = abspath(string(values["baseline_results"])),
         distillation_root = abspath(string(values["distillation_root"])),
@@ -99,7 +99,7 @@ function main(arguments = ARGS)
     manifest = build_protocol_manifest(
         options.output,
         options.protocol;
-        package_results = options.package_results,
+        sparsity_results = options.sparsity_results,
         go_study_results = options.go_study_results,
         baseline_results = options.baseline_results,
         distillation_root = options.distillation_root,

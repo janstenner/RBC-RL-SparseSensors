@@ -3,17 +3,17 @@ using JLD2
 using Printf
 using SHA
 
-include(joinpath(@__DIR__, "Package6Study.jl"))
-using .Package6Study
+include(joinpath(@__DIR__, "GOSensitivityStudy.jl"))
+using .GOSensitivityStudy
 
-const P6_DIRECTORY = @__DIR__
-const P6_PROJECT_ROOT = normpath(joinpath(P6_DIRECTORY, ".."))
-const P6_DISTILLATION_DIRECTORY = joinpath(P6_PROJECT_ROOT, "Expert_Apprentice_Distillation")
-const P6_DEFAULT_RESULTS_ROOT = joinpath(P6_DIRECTORY, "results", "study")
+const GO_SENSITIVITY_DIRECTORY = @__DIR__
+const GO_SENSITIVITY_PROJECT_ROOT = normpath(joinpath(GO_SENSITIVITY_DIRECTORY, ".."))
+const GO_SENSITIVITY_DISTILLATION_DIRECTORY = joinpath(GO_SENSITIVITY_PROJECT_ROOT, "Expert_Apprentice_Distillation")
+const GO_SENSITIVITY_DEFAULT_RESULTS_ROOT = joinpath(GO_SENSITIVITY_DIRECTORY, "results", "study")
 
 function worker_usage(io::IO = stdout)
     println(io, """
-    Package-6 SC sensitivity worker.
+    GO-sensitivity SC sensitivity worker.
 
     Usage:
       julia --project=. run_study_worker.jl --protocol fixed|varying \\
@@ -31,7 +31,7 @@ function parse_worker_arguments(arguments)
         "method" => nothing,
         "strength_index" => nothing,
         "replicate" => nothing,
-        "results_dir" => P6_DEFAULT_RESULTS_ROOT,
+        "results_dir" => GO_SENSITIVITY_DEFAULT_RESULTS_ROOT,
         "retry_failed" => false,
         "smoke_updates" => nothing,
     )
@@ -76,14 +76,14 @@ end
 function configure_worker_environment!(options)
     job = options.job
     directory = run_directory(options.results_root, job)
-    expert_path = joinpath(P6_DISTILLATION_DIRECTORY, "experts", string(job.protocol), "agent.jld2")
+    expert_path = joinpath(GO_SENSITIVITY_DISTILLATION_DIRECTORY, "experts", string(job.protocol), "agent.jld2")
     ENV["DISTILLATION_PROTOCOL"] = string(job.protocol)
     ENV["DISTILLATION_AUTOLOAD_PROTOCOL"] = string(job.protocol)
     ENV["DISTILLATION_SKIP_AUTOLOAD"] = "false"
     ENV["DISTILLATION_GROUP_CHANNELS"] = "false"
     ENV["REVISION_RUN_SEED"] = string(job.apprentice_seed)
     ENV[job.protocol === :fixed ? "DISTILLATION_FIXED_EXPERT_PATH" : "DISTILLATION_VARYING_EXPERT_PATH"] = expert_path
-    ENV["DISTILLATION_WORKER_DIRECTORY"] = joinpath(P6_DISTILLATION_DIRECTORY, "worker_results")
+    ENV["DISTILLATION_WORKER_DIRECTORY"] = joinpath(GO_SENSITIVITY_DISTILLATION_DIRECTORY, "worker_results")
     ENV["DISTILLATION_ALLOW_FRESH_EXPERT"] = "false"
     ENV["REVISION_RUN_DIRECTORY"] = joinpath(directory, "runtime")
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(directory, "apprentice_output")
@@ -135,9 +135,9 @@ end
 
 function study_archive_config(job, updates, training_config, expert_path, corpus_identifier, datasets, initial_hash; smoke_test)
     return Dict{Symbol, Any}(
-        :schema_version => P6_SCHEMA_VERSION,
-        :experiment => :package6_sc_go_sensitivity,
-        :scientific_scope => smoke_test ? :smoke_test : :package6,
+        :schema_version => GO_SENSITIVITY_SCHEMA_VERSION,
+        :experiment => :go_sensitivity_sc,
+        :scientific_scope => smoke_test ? :smoke_test : :go_sensitivity,
         :protocol => job.protocol,
         :method => job.method,
         :group_rows_by_overlap => true,
@@ -153,10 +153,10 @@ function study_archive_config(job, updates, training_config, expert_path, corpus
         :apprentice_seed => job.apprentice_seed,
         :batch_order_seed => job.batch_seed,
         :strength_index => job.strength_index,
-        :go_strength_grid => collect(P6_STRENGTHS[job.protocol]),
-        :quality_threshold => P6_QUALITY_THRESHOLDS[job.protocol],
+        :go_strength_grid => collect(GO_SENSITIVITY_STRENGTHS[job.protocol]),
+        :quality_threshold => GO_SENSITIVITY_QUALITY_THRESHOLDS[job.protocol],
         :regularization_strength => job.regularization_strength,
-        :regression_learning_rate => P6_REGRESSION_LEARNING_RATE,
+        :regression_learning_rate => GO_SENSITIVITY_REGRESSION_LEARNING_RATE,
         :regularized_updates => updates,
         :batch_size => training_config.batch_size,
         :proximal_interval => training_config.proximal_interval,
@@ -165,7 +165,7 @@ function study_archive_config(job, updates, training_config, expert_path, corpus
         :validation_prediction_mode => training_config.validation_prediction_mode,
         :diagnostic_teacher_forced => training_config.diagnostic_teacher_forced,
         :evaluation_start => 0,
-        :evaluation_interval => P6_EVALUATION_INTERVAL,
+        :evaluation_interval => GO_SENSITIVITY_EVALUATION_INTERVAL,
         :initial_apprentice_parameter_hash => initial_hash,
         :expert_identifier => corpus_identifier,
         :expert_path => abspath(expert_path),
@@ -182,8 +182,8 @@ end
 function save_study_summary!(manager, job, result, elapsed_seconds)
     return pareto_atomic_save(
         joinpath(manager.run_directory, "summary.jld2");
-        schema_version = P6_SCHEMA_VERSION,
-        experiment = :package6_sc_go_sensitivity,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
+        experiment = :go_sensitivity_sc,
         completed_at = string(Dates.now()),
         run_id = job.id,
         protocol = job.protocol,
@@ -214,7 +214,7 @@ function validate_complete_run_without_runtime(options, previous)
     string(previous[:config_fingerprint]) == config_fingerprint || error("Complete status/config fingerprint mismatch.")
     expected_updates = isnothing(options.smoke_updates) ? job.updates : options.smoke_updates
     checks = (
-        Symbol(config[:experiment]) === :package6_sc_go_sensitivity,
+        Symbol(config[:experiment]) === :go_sensitivity_sc,
         Symbol(config[:protocol]) === job.protocol,
         Symbol(config[:method]) === job.method,
         Int(config[:replicate]) == job.replicate,
@@ -223,12 +223,12 @@ function validate_complete_run_without_runtime(options, previous)
         Int(config[:apprentice_seed]) == job.apprentice_seed,
         Int(config[:batch_order_seed]) == job.batch_seed,
         Int(config[:regularized_updates]) == expected_updates,
-        Int(config[:evaluation_interval]) == P6_EVALUATION_INTERVAL,
-        Float64(config[:regression_learning_rate]) == P6_REGRESSION_LEARNING_RATE,
-        Float64.(config[:go_strength_grid]) == collect(P6_STRENGTHS[job.protocol]),
-        Float64(config[:quality_threshold]) == P6_QUALITY_THRESHOLDS[job.protocol],
-        Int(config[:batch_size]) == P6_TRAINING_BATCH_SIZE[job.protocol],
-        Int(config[:validation_batch_size]) == P6_VALIDATION_BATCH_SIZE[job.protocol],
+        Int(config[:evaluation_interval]) == GO_SENSITIVITY_EVALUATION_INTERVAL,
+        Float64(config[:regression_learning_rate]) == GO_SENSITIVITY_REGRESSION_LEARNING_RATE,
+        Float64.(config[:go_strength_grid]) == collect(GO_SENSITIVITY_STRENGTHS[job.protocol]),
+        Float64(config[:quality_threshold]) == GO_SENSITIVITY_QUALITY_THRESHOLDS[job.protocol],
+        Int(config[:batch_size]) == GO_SENSITIVITY_TRAINING_BATCH_SIZE[job.protocol],
+        Int(config[:validation_batch_size]) == GO_SENSITIVITY_VALIDATION_BATCH_SIZE[job.protocol],
         Bool(config[:group_channels]) == false,
         length(string(config[:initial_apprentice_parameter_hash])) == 64,
     )
@@ -256,8 +256,8 @@ end
 
 function run_loaded_study_worker(options, directory, expert_path)
     job = options.job
-    Float64(learning_rate) == P6_REGRESSION_LEARNING_RATE || error(
-        "Loaded regression learning rate $learning_rate does not match $P6_REGRESSION_LEARNING_RATE.",
+    Float64(learning_rate) == GO_SENSITIVITY_REGRESSION_LEARNING_RATE || error(
+        "Loaded regression learning rate $learning_rate does not match $GO_SENSITIVITY_REGRESSION_LEARNING_RATE.",
     )
     coverages, datasets, corpus_identifier = assert_study_inputs(job.protocol, expert_path)
     initial_apprentice = deepcopy(apprentice)
@@ -266,19 +266,19 @@ function run_loaded_study_worker(options, directory, expert_path)
     training_config = ApprenticeTrainingConfig(
         regularized_updates = updates,
         post_pruning_finetune_updates = 0,
-        batch_size = P6_TRAINING_BATCH_SIZE[job.protocol],
+        batch_size = GO_SENSITIVITY_TRAINING_BATCH_SIZE[job.protocol],
         proximal_interval = 1,
         reweight_interval = 10,
         regularization_strength = job.regularization_strength,
-        validation_batch_size = P6_VALIDATION_BATCH_SIZE[job.protocol],
+        validation_batch_size = GO_SENSITIVITY_VALIDATION_BATCH_SIZE[job.protocol],
         validation_prediction_mode = :autoregressive,
         diagnostic_teacher_forced = false,
     )
     schedule = CandidateSchedule(
         start_update = 0,
-        evaluation_interval = P6_EVALUATION_INTERVAL,
-        garbage_collection_interval = P6_GARBAGE_COLLECTION_INTERVAL,
-        resume_interval = P6_RESUME_INTERVAL,
+        evaluation_interval = GO_SENSITIVITY_EVALUATION_INTERVAL,
+        garbage_collection_interval = GO_SENSITIVITY_GARBAGE_COLLECTION_INTERVAL,
+        resume_interval = GO_SENSITIVITY_RESUME_INTERVAL,
     )
     config = study_archive_config(
         job,
@@ -327,10 +327,10 @@ function run_loaded_study_worker(options, directory, expert_path)
         started_at = string(Dates.now()),
     )
 
-    println("Package 6 SC worker $(job.id)")
+    println("GO-sensitivity study SC worker $(job.id)")
     println("  method/strength: $(job.method) / $(job.regularization_strength)")
     println("  replicate/seeds: $(job.replicate) / $(job.apprentice_seed), $(job.batch_seed)")
-    println("  updates: $updates; validation interval: $P6_EVALUATION_INTERVAL")
+    println("  updates: $updates; validation interval: $GO_SENSITIVITY_EVALUATION_INTERVAL")
     println("  corpus coverage: train=$(coverages[:train].actual), validation=$(coverages[:validation].actual), test=$(coverages[:test].actual) (unused)")
     println("  resume: $resume")
     println("  output: $directory")
@@ -387,7 +387,7 @@ function study_worker_main(arguments = ARGS)
         catch error_value
             atomic_save(
                 joinpath(run_directory(options.results_root, options.job), "failed_restart_attempt.jld2");
-                schema_version = P6_SCHEMA_VERSION,
+                schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
                 state = :failed,
                 run_id = options.job.id,
                 error_type = string(typeof(error_value)),
@@ -400,7 +400,7 @@ function study_worker_main(arguments = ARGS)
     end
     directory, expert_path = configure_worker_environment!(options)
     try
-        include(joinpath(P6_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
+        include(joinpath(GO_SENSITIVITY_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
         return Base.invokelatest(run_loaded_study_worker, options, directory, expert_path)
     catch error_value
         failure_entries = (
@@ -420,7 +420,7 @@ function study_worker_main(arguments = ARGS)
             # status. Preserve it and record the rejected attempt separately.
             atomic_save(
                 joinpath(run_directory(options.results_root, options.job), "failed_restart_attempt.jld2");
-                schema_version = P6_SCHEMA_VERSION,
+                schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
                 state = :failed,
                 failure_entries...,
             )

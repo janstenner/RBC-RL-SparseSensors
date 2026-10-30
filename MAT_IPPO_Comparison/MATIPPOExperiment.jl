@@ -11,7 +11,7 @@ using Sockets
 using StableRNGs
 using Statistics
 
-export DEFAULT_EPISODES, DEFAULT_RESULTS_DIRECTORY, import_package3!, prepare_jobs,
+export DEFAULT_EPISODES, DEFAULT_RESULTS_DIRECTORY, import_mat_stability!, prepare_jobs,
        run_worker, collect_plan_entries, result_path, validation_path
 
 const SCHEMA_VERSION = 1
@@ -30,7 +30,7 @@ const REVISION_DIRECTORY = normpath(joinpath(@__DIR__, ".."))
 const PROJECT_ROOT = REVISION_DIRECTORY
 const RL_ROOT = normpath(joinpath(dirname(pathof(RL)), ".."))
 const DEFAULT_RESULTS_DIRECTORY = joinpath(@__DIR__, "results")
-const DEFAULT_PACKAGE3_DIRECTORY = joinpath(REVISION_DIRECTORY, "MAT_Stability", "results")
+const DEFAULT_MAT_STABILITY_DIRECTORY = joinpath(REVISION_DIRECTORY, "MAT_Stability", "results")
 const CORPUS_PATH = joinpath(
     REVISION_DIRECTORY,
     "VaryingIC_Corpus",
@@ -53,7 +53,7 @@ const SNAPSHOT_GLOBALS = (
     :useSelfAttentionFirst, :use_mus, :randomIC, :joon_pe, :square_rewards,
 )
 
-# Populated by exactly one dynamically included Package-2 run file per process.
+# Populated by exactly one dynamically included base run file per process.
 agent = nothing
 hook = nothing
 env = nothing
@@ -111,7 +111,7 @@ function load_plan(results_directory::AbstractString; allow_missing::Bool = fals
     path = plan_path(results_directory)
     if !isfile(path)
         allow_missing && return empty_plan()
-        error("No Package-4 plan found at '$path'.")
+        error("No MAT-IPPO comparison plan found at '$path'.")
     end
     plan = JLD2.load(path, "plan")
     Int(plan["schema_version"]) == SCHEMA_VERSION || error("Unsupported plan schema.")
@@ -302,7 +302,7 @@ function is_pending(entry, protocols, results_directory)
     end
 end
 
-function p3_metadata(path::AbstractString)
+function stability_metadata(path::AbstractString)
     return JLD2.jldopen(path, "r") do file
         trace = haskey(file, "initial_condition_trace") ?
             normalize_trace(read(file, "initial_condition_trace")) : NamedTuple[]
@@ -322,22 +322,22 @@ function p3_metadata(path::AbstractString)
     end
 end
 
-function find_package3_pairs(package3_directory::AbstractString)
+function find_mat_stability_pairs(mat_stability_directory::AbstractString)
     by_seed = Dict{Tuple{Int, Int}, Dict{Symbol, Any}}()
-    isdir(package3_directory) || return by_seed
+    isdir(mat_stability_directory) || return by_seed
     for protocol in PROTOCOLS
-        root = joinpath(package3_directory, string(protocol))
+        root = joinpath(mat_stability_directory, string(protocol))
         isdir(root) || continue
         for (directory, _, files) in walkdir(root)
             "modified_full.jld2" in files || continue
             path = joinpath(directory, "modified_full.jld2")
             metadata = try
-                p3_metadata(path)
+                stability_metadata(path)
             catch error_value
-                @warn "Ignoring unreadable Package-3 result" path exception = error_value
+                @warn "Ignoring unreadable MAT-stability result" path exception = error_value
                 continue
             end
-            metadata.protocol == protocol || error("P3 protocol mismatch in '$path'.")
+            metadata.protocol == protocol || error("MAT-stability protocol mismatch in '$path'.")
             metadata.status == "complete" || continue
             metadata.config_name == :modified_full || continue
             expected = DEFAULT_EPISODES[protocol]
@@ -352,7 +352,7 @@ function find_package3_pairs(package3_directory::AbstractString)
             )
             if haskey(records, protocol)
                 source_hash(records[protocol].path) == source_hash(metadata.path) || error(
-                    "Conflicting P3 results share seeds $(metadata.run_seed)/$(metadata.ic_seed) " *
+                    "Conflicting MAT-stability results share seeds $(metadata.run_seed)/$(metadata.ic_seed) " *
                     "for protocol $protocol.",
                 )
             else
@@ -370,10 +370,10 @@ function copy_import_result(source, target, entry, protocol)
         if !isnothing(metadata) && metadata.status == "complete" &&
            metadata.run_seed == entry.run_seed && metadata.ic_seed == entry.ic_seed
             compatible = JLD2.jldopen(target, "r") do file
-                haskey(file, "package4_source_sha256") &&
-                read(file, "package4_source_sha256") == source_sha &&
-                read(file, "package4_run_id") == entry.run_id &&
-                Symbol(read(file, "package4_protocol")) == protocol
+                haskey(file, "comparison_source_sha256") &&
+                read(file, "comparison_source_sha256") == source_sha &&
+                read(file, "comparison_run_id") == entry.run_id &&
+                Symbol(read(file, "comparison_protocol")) == protocol
             end
             compatible && return target
         end
@@ -386,23 +386,23 @@ function copy_import_result(source, target, entry, protocol)
     cp(source, temporary; force = false)
     JLD2.jldopen(temporary, "a+") do file
         file["algorithm"] = :mat
-        file["package4_schema_version"] = SCHEMA_VERSION
-        file["package4_run_id"] = entry.run_id
-        file["package4_batch_id"] = entry_batch(entry)
-        file["package4_origin"] = :imported_package3
-        file["package4_imported_at"] = string(now())
-        file["package4_source_path"] = abspath(source)
-        file["package4_source_sha256"] = source_sha
-        file["package4_protocol"] = protocol
+        file["comparison_schema_version"] = SCHEMA_VERSION
+        file["comparison_run_id"] = entry.run_id
+        file["comparison_batch_id"] = entry_batch(entry)
+        file["comparison_origin"] = :imported_mat_stability
+        file["comparison_imported_at"] = string(now())
+        file["comparison_source_path"] = abspath(source)
+        file["comparison_source_sha256"] = source_sha
+        file["comparison_protocol"] = protocol
     end
     mv(temporary, target; force = false)
     return target
 end
 
-function import_package3!(;
+function import_mat_stability!(;
     count::Integer,
     results_directory::AbstractString = DEFAULT_RESULTS_DIRECTORY,
-    package3_directory::AbstractString = DEFAULT_PACKAGE3_DIRECTORY,
+    mat_stability_directory::AbstractString = DEFAULT_MAT_STABILITY_DIRECTORY,
     preview::Bool = false,
 )
     count >= 0 || throw(ArgumentError("count must be non-negative."))
@@ -410,7 +410,7 @@ function import_package3!(;
         plan = load_plan(results_directory; allow_missing = true)
         entries = plan["entries"]
         existing_seeds = Set((entry.run_seed, entry.ic_seed) for entry in entries)
-        existing_imports = [entry for entry in entries if entry.origin === :imported_package3]
+        existing_imports = [entry for entry in entries if entry.origin === :imported_mat_stability]
         pending_batches = [
             batch for batch in entry_batches(existing_imports)
             if any(entry -> is_pending(entry, collect(PROTOCOLS), results_directory), batch)
@@ -424,14 +424,14 @@ function import_package3!(;
             return selected
         end
         needed = count
-        pairs = find_package3_pairs(package3_directory)
+        pairs = find_mat_stability_pairs(mat_stability_directory)
         candidates = [
             (seeds = seeds, records = records) for (seeds, records) in sort!(collect(pairs); by = first)
             if !(seeds in existing_seeds)
         ]
         length(candidates) >= needed || error(
             "Requested $count imported seed pairs, but only $(length(candidates)) new complete " *
-            "fixed/varying P3 pairs are available. " *
+            "fixed/varying MAT-stability pairs are available. " *
             "No replacement seeds were generated.",
         )
 
@@ -441,8 +441,8 @@ function import_package3!(;
             run_seed, ic_seed = candidate.seeds
             varying = candidate.records[:varying]
             fixed = candidate.records[:fixed]
-            fixed.run_seed == varying.run_seed == run_seed || error("P3 run-seed pair mismatch.")
-            fixed.ic_seed == varying.ic_seed == ic_seed || error("P3 IC-seed pair mismatch.")
+            fixed.run_seed == varying.run_seed == run_seed || error("MAT-stability run-seed pair mismatch.")
+            fixed.ic_seed == varying.ic_seed == ic_seed || error("MAT-stability IC-seed pair mismatch.")
             metadata = Dict(
                 "fixed_source" => abspath(fixed.path),
                 "varying_source" => abspath(varying.path),
@@ -451,7 +451,7 @@ function import_package3!(;
             )
             entry = make_entry(
                 (; run_seed, ic_seed);
-                origin = :imported_package3,
+                origin = :imported_mat_stability,
                 batch_id,
                 trace = varying.trace,
                 import_metadata = metadata,
@@ -533,7 +533,7 @@ function jobs_for(entries, protocols, results_directory; force::Bool = false)
             # training worker, so the normal import launch still has only one
             # worker per protocol and seed pair.
             paired_ippo = result_path(results_directory, entry.run_id, protocol, :ippo)
-            if algorithm === :mat && entry.origin === :imported_package3 &&
+            if algorithm === :mat && entry.origin === :imported_mat_stability &&
                !complete_result(paired_ippo, entry, protocol, :ippo)
                 continue
             end
@@ -554,7 +554,7 @@ function prepare_jobs(;
     look_for_imports::Bool,
     protocol = :all,
     results_directory::AbstractString = DEFAULT_RESULTS_DIRECTORY,
-    package3_directory::AbstractString = DEFAULT_PACKAGE3_DIRECTORY,
+    mat_stability_directory::AbstractString = DEFAULT_MAT_STABILITY_DIRECTORY,
     preview::Bool = false,
     overwrite::Bool = false,
 )
@@ -562,7 +562,7 @@ function prepare_jobs(;
     protocols = selected_protocols(protocol)
     if overwrite
         plan = load_plan(results_directory)
-        origin = look_for_imports ? :imported_package3 : :generated
+        origin = look_for_imports ? :imported_mat_stability : :generated
         candidates = [entry for entry in plan["entries"] if entry.origin === origin]
         length(candidates) >= n_runs || error(
             "Cannot overwrite $n_runs $origin entries; only $(length(candidates)) exist.",
@@ -571,10 +571,10 @@ function prepare_jobs(;
         return (; entries, jobs = jobs_for(entries, protocols, results_directory; force = true))
     end
     if look_for_imports
-        entries = import_package3!(;
+        entries = import_mat_stability!(;
             count = n_runs,
             results_directory,
-            package3_directory,
+            mat_stability_directory,
             preview,
         )
         return (; entries, jobs = jobs_for(entries, protocols, results_directory))
@@ -991,7 +991,7 @@ function run_worker(;
             end
         end
 
-        if algorithm === :ippo && entry.origin === :imported_package3
+        if algorithm === :ippo && entry.origin === :imported_mat_stability
             mat_training = result_path(results_directory, entry.run_id, protocol, :mat)
             mat_validation = validation_path(results_directory, entry.run_id, protocol, :mat)
             if complete_result(mat_training, entry, protocol, :mat) &&

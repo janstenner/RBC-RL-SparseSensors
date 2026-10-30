@@ -1,4 +1,4 @@
-module Package6Study
+module GOSensitivityStudy
 
 using Dates
 using JLD2
@@ -6,36 +6,36 @@ using Printf
 using SHA
 using StableRNGs
 
-export P6_SCHEMA_VERSION, P6_MASTER_SEED, P6_STRENGTHS, P6_GR_STRENGTH,
-       P6_QUALITY_THRESHOLDS,
-       P6_UPDATES, P6_EVALUATION_INTERVAL, P6_RESUME_INTERVAL,
-       P6_GARBAGE_COLLECTION_INTERVAL, P6_REGRESSION_LEARNING_RATE,
-       P6_TRAINING_BATCH_SIZE, P6_VALIDATION_BATCH_SIZE,
-       P6_REPLICATES, P6_POLL_SECONDS, P6_TIMEOUT_SECONDS,
+export GO_SENSITIVITY_SCHEMA_VERSION, GO_SENSITIVITY_MASTER_SEED, GO_SENSITIVITY_STRENGTHS, GO_SENSITIVITY_GR_STRENGTH,
+       GO_SENSITIVITY_QUALITY_THRESHOLDS,
+       GO_SENSITIVITY_UPDATES, GO_SENSITIVITY_EVALUATION_INTERVAL, GO_SENSITIVITY_RESUME_INTERVAL,
+       GO_SENSITIVITY_GARBAGE_COLLECTION_INTERVAL, GO_SENSITIVITY_REGRESSION_LEARNING_RATE,
+       GO_SENSITIVITY_TRAINING_BATCH_SIZE, GO_SENSITIVITY_VALIDATION_BATCH_SIZE,
+       GO_SENSITIVITY_REPLICATES, GO_SENSITIVITY_POLL_SECONDS, GO_SENSITIVITY_TIMEOUT_SECONDS,
        normalize_protocol, seed_plan, seed_plan_hash, study_jobs, analysis_jobs,
        job_for, run_id, run_relative_path, run_directory, status_path,
        canonical_string, fingerprint, atomic_save, load_status, write_status!,
        expected_evaluation_updates, short_path_components,
        baseline_artifact_path, load_baseline_artifact
 
-const P6_SCHEMA_VERSION = 1
-const P6_MASTER_SEED = 20_260_812
-const P6_STRENGTHS = Dict(
+const GO_SENSITIVITY_SCHEMA_VERSION = 1
+const GO_SENSITIVITY_MASTER_SEED = 20_260_812
+const GO_SENSITIVITY_STRENGTHS = Dict(
     :fixed => (0.000512, 0.00128, 0.0032, 0.008, 0.02),
     :varying => (0.000768, 0.00192, 0.0048, 0.012, 0.03),
 )
-const P6_GR_STRENGTH = Dict(:fixed => 0.00007, :varying => 0.0001)
-const P6_QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 3e-2)
-const P6_UPDATES = Dict(:fixed => 35_000, :varying => 50_000)
-const P6_EVALUATION_INTERVAL = 25
-const P6_RESUME_INTERVAL = 100
-const P6_GARBAGE_COLLECTION_INTERVAL = 5
-const P6_REGRESSION_LEARNING_RATE = 2e-4
-const P6_TRAINING_BATCH_SIZE = Dict(:fixed => 50, :varying => 100)
-const P6_VALIDATION_BATCH_SIZE = Dict(:fixed => 200, :varying => 512)
-const P6_REPLICATES = 1:3
-const P6_POLL_SECONDS = 60
-const P6_TIMEOUT_SECONDS = 14 * 24 * 60 * 60
+const GO_SENSITIVITY_GR_STRENGTH = Dict(:fixed => 0.00007, :varying => 0.0001)
+const GO_SENSITIVITY_QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 3e-2)
+const GO_SENSITIVITY_UPDATES = Dict(:fixed => 35_000, :varying => 50_000)
+const GO_SENSITIVITY_EVALUATION_INTERVAL = 25
+const GO_SENSITIVITY_RESUME_INTERVAL = 100
+const GO_SENSITIVITY_GARBAGE_COLLECTION_INTERVAL = 5
+const GO_SENSITIVITY_REGRESSION_LEARNING_RATE = 2e-4
+const GO_SENSITIVITY_TRAINING_BATCH_SIZE = Dict(:fixed => 50, :varying => 100)
+const GO_SENSITIVITY_VALIDATION_BATCH_SIZE = Dict(:fixed => 200, :varying => 512)
+const GO_SENSITIVITY_REPLICATES = 1:3
+const GO_SENSITIVITY_POLL_SECONDS = 60
+const GO_SENSITIVITY_TIMEOUT_SECONDS = 14 * 24 * 60 * 60
 
 function baseline_artifact_path(protocol, controller; results_root = nothing)
     normalized_protocol = normalize_protocol(protocol)
@@ -73,7 +73,7 @@ function load_baseline_artifact(
         expected = replace(string(expert_identifier), r"^sha256:" => "")
         observed = string(loaded["expert_sha256"])
         observed == expected || error(
-            "Baseline expert sha256:$observed does not match the Package-6 expert $(expert_identifier).",
+            "Baseline expert sha256:$observed does not match the GO-sensitivity expert $(expert_identifier).",
         )
     end
     return (; path, loaded, episodes)
@@ -89,10 +89,10 @@ end
 
 """Return the deterministic, paired apprentice and batch seeds for one replicate."""
 function seed_plan(replicate::Integer)
-    replicate in P6_REPLICATES || throw(
-        ArgumentError("Replicate must be in $(first(P6_REPLICATES)):$(last(P6_REPLICATES))."),
+    replicate in GO_SENSITIVITY_REPLICATES || throw(
+        ArgumentError("Replicate must be in $(first(GO_SENSITIVITY_REPLICATES)):$(last(GO_SENSITIVITY_REPLICATES))."),
     )
-    planner = StableRNG(P6_MASTER_SEED)
+    planner = StableRNG(GO_SENSITIVITY_MASTER_SEED)
     apprentice_seed = 0
     batch_seed = 0
     for _ in 1:replicate
@@ -138,7 +138,7 @@ strength_tag(index::Integer) = @sprintf("s%02d", index)
 
 function run_id(protocol::Symbol, method::Symbol, strength_index::Integer, replicate::Integer)
     suffix = method === :go ? "_$(strength_tag(strength_index))" : ""
-    return "p6_$(protocol_tag(protocol))_$(method_tag(method))$(suffix)_$(replicate_tag(replicate))"
+    return "gos_$(protocol_tag(protocol))_$(method_tag(method))$(suffix)_$(replicate_tag(replicate))"
 end
 
 function run_relative_path(protocol::Symbol, method::Symbol, strength_index::Integer, replicate::Integer)
@@ -155,7 +155,7 @@ function study_jobs(protocol_selection = :all)
     protocols = protocol_selection === :all ? (:fixed, :varying) : (normalize_protocol(protocol_selection),)
     jobs = NamedTuple[]
     for protocol in protocols
-        for (strength_index, strength) in enumerate(P6_STRENGTHS[protocol]), replicate in P6_REPLICATES
+        for (strength_index, strength) in enumerate(GO_SENSITIVITY_STRENGTHS[protocol]), replicate in GO_SENSITIVITY_REPLICATES
             seeds = seed_plan(replicate)
             push!(jobs, (
                 protocol,
@@ -165,22 +165,22 @@ function study_jobs(protocol_selection = :all)
                 replicate = Int(replicate),
                 seeds...,
                 pairing_hash = seed_plan_hash(replicate),
-                updates = P6_UPDATES[protocol],
+                updates = GO_SENSITIVITY_UPDATES[protocol],
                 id = run_id(protocol, :go, strength_index, replicate),
                 relative_path = run_relative_path(protocol, :go, strength_index, replicate),
             ))
         end
-        for replicate in P6_REPLICATES
+        for replicate in GO_SENSITIVITY_REPLICATES
             seeds = seed_plan(replicate)
             push!(jobs, (
                 protocol,
                 method = :gr,
                 strength_index = 0,
-                regularization_strength = P6_GR_STRENGTH[protocol],
+                regularization_strength = GO_SENSITIVITY_GR_STRENGTH[protocol],
                 replicate = Int(replicate),
                 seeds...,
                 pairing_hash = seed_plan_hash(replicate),
-                updates = P6_UPDATES[protocol],
+                updates = GO_SENSITIVITY_UPDATES[protocol],
                 id = run_id(protocol, :gr, 0, replicate),
                 relative_path = run_relative_path(protocol, :gr, 0, replicate),
             ))
@@ -193,7 +193,7 @@ function analysis_jobs(protocol_selection = :all)
     protocols = protocol_selection === :all ? (:fixed, :varying) : (normalize_protocol(protocol_selection),)
     return [(
         protocol,
-        id = "p6_$(protocol_tag(protocol))_analyze",
+        id = "gos_$(protocol_tag(protocol))_analyze",
         relative_path = joinpath(string(protocol), "analysis"),
     ) for protocol in protocols]
 end
@@ -204,11 +204,11 @@ function job_for(protocol, method, strength_index, replicate)
     matches = filter(study_jobs(protocol)) do job
         job.method === method && job.strength_index == Int(strength_index) && job.replicate == Int(replicate)
     end
-    length(matches) == 1 || error("No unique Package-6 job matches the requested identity.")
+    length(matches) == 1 || error("No unique GO-sensitivity job matches the requested identity.")
     return only(matches)
 end
 
-expected_evaluation_updates(updates::Integer) = collect(0:P6_EVALUATION_INTERVAL:Int(updates))
+expected_evaluation_updates(updates::Integer) = collect(0:GO_SENSITIVITY_EVALUATION_INTERVAL:Int(updates))
 
 function short_path_components(job; maximum::Int = 16)
     components = splitpath(job.relative_path)
@@ -234,7 +234,7 @@ end
 function load_status(path::AbstractString)
     isfile(path) || return nothing
     loaded = JLD2.load(path)
-    Int(loaded["schema_version"]) == P6_SCHEMA_VERSION || error("Unsupported status schema at '$path'.")
+    Int(loaded["schema_version"]) == GO_SENSITIVITY_SCHEMA_VERSION || error("Unsupported status schema at '$path'.")
     return Dict{Symbol, Any}(Symbol(key) => value for (key, value) in loaded)
 end
 
@@ -242,7 +242,7 @@ function write_status!(path::AbstractString; state::Symbol, entries...)
     state in (:running, :complete, :failed) || error("Unsupported worker state '$state'.")
     return atomic_save(
         path;
-        schema_version = P6_SCHEMA_VERSION,
+        schema_version = GO_SENSITIVITY_SCHEMA_VERSION,
         state,
         updated_at = string(Dates.now()),
         entries...,

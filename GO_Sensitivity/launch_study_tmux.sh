@@ -6,7 +6,7 @@ project_root="$(cd "${script_directory}/.." && pwd)"
 training_worker="${script_directory}/run_study_worker.jl"
 analysis_worker="${script_directory}/analyze_study_worker.jl"
 manifest_worker="${script_directory}/prepare_study_manifest.jl"
-results_directory="${P6_STUDY_RESULTS_DIR:-${script_directory}/results/study}"
+results_directory="${GO_SENSITIVITY_STUDY_RESULTS_DIR:-${script_directory}/results/study}"
 julia_binary="${JULIA_BIN:-julia}"
 
 preview=false
@@ -24,7 +24,7 @@ usage() {
     cat <<'EOF'
 Usage: launch_study_tmux.sh [options]
 
-Starts all selected Package-6 SC study jobs as independent, detached and
+Starts all selected GO-sensitivity SC study jobs as independent, detached and
 self-closing tmux sessions. The default starts 36 training sessions and two
 analysis/wait sessions concurrently.
 
@@ -152,7 +152,7 @@ for protocol in "${protocols[@]}"; do
             strength_tag="$(printf 's%02d' "${strength_index}")"
             for replicate in 1 2 3; do
                 replicate_tag="$(printf 'r%02d' "${replicate}")"
-                session="p6_${protocol_tag}_go_${strength_tag}_${replicate_tag}"
+                session="gos_${protocol_tag}_go_${strength_tag}_${replicate_tag}"
                 start_session "${session}" training "${protocol}" go "${strength_index}" "${replicate}" \
                     "${julia_binary}" "--startup-file=no" "--project=${project_root}" "${training_worker}" \
                     --protocol "${protocol}" --method go --strength-index "${strength_index}" \
@@ -161,14 +161,14 @@ for protocol in "${protocols[@]}"; do
         done
         for replicate in 1 2 3; do
             replicate_tag="$(printf 'r%02d' "${replicate}")"
-            session="p6_${protocol_tag}_gr_${replicate_tag}"
+            session="gos_${protocol_tag}_gr_${replicate_tag}"
             start_session "${session}" training "${protocol}" gr 0 "${replicate}" \
                 "${julia_binary}" "--startup-file=no" "--project=${project_root}" "${training_worker}" \
                 --protocol "${protocol}" --method gr --strength-index 0 \
                 --replicate "${replicate}" --results-dir "${results_directory}"
         done
     fi
-    session="p6_${protocol_tag}_analyze"
+    session="gos_${protocol_tag}_analyze"
     analysis_command=(
         "${julia_binary}" "--startup-file=no" "--project=${project_root}" "${analysis_worker}"
         --protocol "${protocol}" --results-dir "${results_directory}"

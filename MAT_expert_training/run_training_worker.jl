@@ -9,7 +9,7 @@ function usage()
 
         Options:
           --results-dir PATH         Expert-training result root.
-          --source-results-dir PATH  MAT-IPPO Package-4 result root.
+          --source-results-dir PATH  MAT-IPPO comparison result root.
           --help                     Show this message.
         """,
     )

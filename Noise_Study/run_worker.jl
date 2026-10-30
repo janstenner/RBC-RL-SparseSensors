@@ -124,7 +124,7 @@ function write_worker_status!(path, options, manifest; state::Symbol, message = 
     atomic_save(
         path;
         schema_version = NOISE_SCHEMA_VERSION,
-        experiment = :package10_sensor_noise,
+        experiment = :sensor_noise,
         experiment_id = string(manifest[:experiment_id]),
         protocol = options.protocol,
         controller = options.controller,
@@ -284,7 +284,7 @@ function save_episode(path, options, manifest, controller, case, episode; replic
     atomic_save(
         path;
         schema_version = NOISE_SCHEMA_VERSION,
-        experiment = :package10_sensor_noise_episode,
+        experiment = :sensor_noise_episode,
         experiment_id = string(manifest[:experiment_id]),
         protocol = options.protocol,
         controller = options.controller,
@@ -520,7 +520,7 @@ function main(arguments = ARGS)
         atomic_save(
             result;
             schema_version = NOISE_SCHEMA_VERSION,
-            experiment = :package10_sensor_noise_worker,
+            experiment = :sensor_noise_worker,
             experiment_id = string(manifest[:experiment_id]),
             protocol = options.protocol,
             controller = options.controller,
